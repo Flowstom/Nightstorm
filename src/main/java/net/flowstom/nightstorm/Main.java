@@ -51,8 +51,7 @@ public final class Main {
         final Path outputPath = options.requiredPath("output");
         final var baseline = PacketScanner.scan(baselineJar);
         final var target = PacketScanner.scan(targetJar);
-        final var result = PacketUpdater.update(source, baseline, target, targetJar);
-        Json.write(outputPath, target);
+        final var result = PacketUpdater.update(source, baseline, target, baselineJar, targetJar, outputPath);
         System.out.printf("Updated %d packet registrations and generated %d packet classes in %s%n",
                 result.packets(), result.generatedPackets(), source);
         if (!result.warnings().isEmpty()) {

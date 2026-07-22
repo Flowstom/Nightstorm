@@ -22,21 +22,79 @@ final class PacketUpdater {
     }
 
     static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport baseline, PacketScanner.PacketReport target,
-                               Path targetJar) throws IOException {
+                               Path baselineJar, Path targetJar) throws IOException {
+        return update(sourceRoot, baseline, baseline, target, baselineJar, targetJar, null);
+    }
+
+    static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport baseline,
+                               PacketScanner.PacketReport target, Path baselineJar, Path targetJar,
+                               Path outputPath) throws IOException {
+        final PacketScanner.PacketReport current = Files.exists(outputPath)
+                ? Json.read(outputPath, PacketScanner.PacketReport.class)
+                : baseline;
+        return update(sourceRoot, current, baseline, target, baselineJar, targetJar, outputPath);
+    }
+
+    static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport current,
+                               PacketScanner.PacketReport baseline, PacketScanner.PacketReport target,
+                               Path baselineJar, Path targetJar, Path outputPath) throws IOException {
+        return update(sourceRoot, current, baseline, target, baselineJar, targetJar, outputPath,
+                (ignored, replacementCount) -> {
+                });
+    }
+
+    static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport current,
+                               PacketScanner.PacketReport baseline, PacketScanner.PacketReport target,
+                               Path baselineJar, Path targetJar, Path outputPath,
+                               SourceTransaction.AfterReplace afterReplace) throws IOException {
+        if (!samePackets(current, baseline) && !samePackets(current, target)) {
+            throw new IllegalStateException("Current packet schema matches neither the baseline nor target protocol");
+        }
+        return SourceTransaction.run(sourceRoot, outputPath, (stagedRoot, stagedOutput) -> {
+            final UpdateResult result = updateInPlace(stagedRoot, current, baseline, target, baselineJar, targetJar);
+            if (stagedOutput != null) Json.write(stagedOutput, target);
+            return result;
+        }, afterReplace);
+    }
+
+    private static UpdateResult updateInPlace(Path sourceRoot, PacketScanner.PacketReport current,
+                                              PacketScanner.PacketReport baseline,
+                                              PacketScanner.PacketReport target,
+                                              Path baselineJar, Path targetJar) throws IOException {
         final Map<String, PacketCodecScanner.PacketShape> shapes = new HashMap<>();
-        return update(sourceRoot, baseline, target, codecOwner -> shapes.computeIfAbsent(codecOwner, owner -> {
+        final List<RetainedPacket> retainedPackets = new ArrayList<>();
+        final UpdateResult result = update(sourceRoot, current, baseline, target,
+                codecOwner -> shapes.computeIfAbsent(codecOwner, owner -> {
             try {
                 return PacketCodecScanner.scan(targetJar, owner);
             } catch (IOException exception) {
                 throw new IllegalStateException("Unable to inspect packet codec " + owner, exception);
             }
-        }));
+        }), retainedPackets);
+        RetainedPacketMigrator.apply(sourceRoot,
+                PacketMigrationScanner.scan(baselineJar, targetJar, retainedPackets));
+        return result;
     }
 
     static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport baseline, PacketScanner.PacketReport target,
                                Function<String, PacketCodecScanner.PacketShape> shapeResolver) throws IOException {
+        return update(sourceRoot, baseline, baseline, target, shapeResolver, new ArrayList<>());
+    }
+
+    static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport current,
+                               PacketScanner.PacketReport baseline, PacketScanner.PacketReport target,
+                               Function<String, PacketCodecScanner.PacketShape> shapeResolver) throws IOException {
+        return update(sourceRoot, current, baseline, target, shapeResolver, new ArrayList<>());
+    }
+
+    private static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport current,
+                                       PacketScanner.PacketReport baseline,
+                                       PacketScanner.PacketReport target,
+                                       Function<String, PacketCodecScanner.PacketShape> shapeResolver,
+                                       List<RetainedPacket> retainedPackets) throws IOException {
         final Path packetVanilla = sourceRoot.resolve("src/main/java/net/minestom/server/network/packet/PacketVanilla.java");
         final String source = Files.readString(packetVanilla);
+        final Map<RegistryKey, List<PacketScanner.PacketCandidate>> currentPackets = group(current);
         final Map<RegistryKey, List<PacketScanner.PacketCandidate>> baselinePackets = group(baseline);
         final Map<RegistryKey, List<PacketScanner.PacketCandidate>> targetPackets = group(target);
         final List<GeneratedPacket> generatedPackets = new ArrayList<>();
@@ -62,8 +120,9 @@ final class PacketUpdater {
                     if (lines[index].strip().equals(");")) break;
                 }
             }
-            rewriteRegistry(updated, block, key, baselinePackets.getOrDefault(key, List.of()),
-                    targetPackets.getOrDefault(key, List.of()), generatedPackets, shapeResolver);
+            rewriteRegistry(updated, block, key, currentPackets.getOrDefault(key, List.of()),
+                    baselinePackets.getOrDefault(key, List.of()),
+                    targetPackets.getOrDefault(key, List.of()), generatedPackets, retainedPackets, shapeResolver);
         }
 
         String updatedSource = removeFinalExtraNewline(updated.toString());
@@ -113,9 +172,11 @@ final class PacketUpdater {
     }
 
     private static void rewriteRegistry(StringBuilder output, List<String> block, RegistryKey key,
-                                        List<PacketScanner.PacketCandidate> baseline,
-                                        List<PacketScanner.PacketCandidate> target, List<GeneratedPacket> generatedPackets,
-                                        Function<String, PacketCodecScanner.PacketShape> shapeResolver) {
+                                         List<PacketScanner.PacketCandidate> current,
+                                         List<PacketScanner.PacketCandidate> baseline,
+                                         List<PacketScanner.PacketCandidate> target, List<GeneratedPacket> generatedPackets,
+                                         List<RetainedPacket> retainedPackets,
+                                         Function<String, PacketCodecScanner.PacketShape> shapeResolver) {
         final List<RegistryEntry> entries = new ArrayList<>();
         int firstEntry = -1;
         int lastEntry = -1;
@@ -127,13 +188,8 @@ final class PacketUpdater {
                 entries.add(new RegistryEntry(matcher.group(1), matcher.group(2), matcher.group(3)));
             }
         }
-        final List<PacketScanner.PacketCandidate> sourcePackets;
-        if (baseline.size() == entries.size()) {
-            sourcePackets = baseline;
-        } else if (target.size() == entries.size() && entries.stream().anyMatch(entry -> entry.className().startsWith("Nightstorm"))) {
-            sourcePackets = target;
-        } else {
-            throw new IllegalStateException("Baseline " + key + " has " + baseline.size()
+        if (current.size() != entries.size()) {
+            throw new IllegalStateException("Current schema " + key + " has " + current.size()
                     + " packets but PacketVanilla has " + entries.size());
         }
         if (target.isEmpty() && !baseline.isEmpty()) {
@@ -141,8 +197,21 @@ final class PacketUpdater {
         }
 
         final Map<String, RegistryEntry> existingByVanillaType = new LinkedHashMap<>();
-        for (int index = 0; index < sourcePackets.size(); index++) {
-            existingByVanillaType.put(sourcePackets.get(index).vanillaType(), entries.get(index));
+        final Map<String, PacketScanner.PacketCandidate> baselineByVanillaType = new HashMap<>();
+        for (PacketScanner.PacketCandidate packet : baseline) baselineByVanillaType.put(packet.vanillaType(), packet);
+        for (int index = 0; index < current.size(); index++) {
+            final PacketScanner.PacketCandidate packet = current.get(index);
+            final RegistryEntry entry = entries.get(index);
+            if (entry.className().startsWith("Nightstorm")) {
+                final String expected = className(key, packet.vanillaType());
+                if (!entry.className().equals(expected)) {
+                    throw new IllegalStateException("Generated packet " + entry.className()
+                            + " does not match current schema packet " + packet.vanillaType());
+                }
+            }
+            if (existingByVanillaType.put(packet.vanillaType(), entry) != null) {
+                throw new IllegalStateException("Duplicate packet type " + packet.vanillaType() + " in " + key);
+            }
         }
         final String indent = entries.isEmpty() ? "            " : entries.getFirst().indent();
         final List<RegistryEntry> reordered = new ArrayList<>();
@@ -150,6 +219,11 @@ final class PacketUpdater {
             final RegistryEntry existing = existingByVanillaType.get(packet.vanillaType());
             if (existing != null) {
                 reordered.add(existing);
+                final PacketScanner.PacketCandidate baselinePacket = baselineByVanillaType.get(packet.vanillaType());
+                if (baselinePacket != null && !existing.className().startsWith("Nightstorm")) {
+                    retainedPackets.add(new RetainedPacket(existing.className(), existing.serializer(),
+                            baselinePacket.codecOwner(), packet.codecOwner()));
+                }
                 if (existing.className().startsWith("Nightstorm")) {
                     final String expectedClassName = className(key, packet.vanillaType());
                     if (!existing.className().equals(expectedClassName)) {
@@ -184,9 +258,22 @@ final class PacketUpdater {
     private static Map<RegistryKey, List<PacketScanner.PacketCandidate>> group(PacketScanner.PacketReport report) {
         final Map<RegistryKey, List<PacketScanner.PacketCandidate>> grouped = new HashMap<>();
         for (PacketScanner.PacketCandidate packet : report.packets()) {
-            grouped.computeIfAbsent(new RegistryKey(packet.state(), packet.direction()), ignored -> new ArrayList<>()).add(packet);
+            final List<PacketScanner.PacketCandidate> packets = grouped.computeIfAbsent(
+                    new RegistryKey(packet.state(), packet.direction()), ignored -> new ArrayList<>());
+            if (packet.id() != packets.size()) {
+                throw new IllegalStateException("Packet IDs for " + packet.state() + '/' + packet.direction()
+                        + " are not contiguous at " + packet.vanillaType());
+            }
+            if (packets.stream().anyMatch(existing -> existing.vanillaType().equals(packet.vanillaType()))) {
+                throw new IllegalStateException("Duplicate packet type " + packet.vanillaType());
+            }
+            packets.add(packet);
         }
         return grouped;
+    }
+
+    private static boolean samePackets(PacketScanner.PacketReport left, PacketScanner.PacketReport right) {
+        return left.packets().equals(right.packets());
     }
 
     private static String className(RegistryKey key, String vanillaType) {
@@ -293,6 +380,9 @@ final class PacketUpdater {
 
     private record GeneratedPacket(String className, RegistryKey key, String vanillaType,
                                    PacketCodecScanner.PacketShape shape) {
+    }
+
+    record RetainedPacket(String className, String serializer, String baselineCodecOwner, String targetCodecOwner) {
     }
 
     private record RegistryKey(String state, String direction) {
