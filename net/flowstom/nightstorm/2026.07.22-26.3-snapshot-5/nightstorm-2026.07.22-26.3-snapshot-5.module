@@ -1,0 +1,416 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "net.flowstom",
+    "module": "nightstorm",
+    "version": "2026.07.22-26.3-snapshot-5",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.6.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 25,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains",
+          "module": "annotations",
+          "version": {
+            "requires": "26.1.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-api",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-nbt",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-gson",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-legacy",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-plain",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-ansi",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-logger-slf4j",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "com.google.code.gson",
+          "module": "gson",
+          "version": {
+            "requires": "2.14.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "name": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
+          "url": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
+          "size": 4218447,
+          "sha512": "13a1b075546e0ccd4fcc41ff84c5fc3f5f33a63622e7209ceb383508b45e944d5c2cee6fd91683501d75665b376d18e203e26e33eb7c8d1de060a77d8029d81e",
+          "sha256": "deca553da709cf3a13f60b95de34e180edf4717f2b6de16bb73823541cb3fbac",
+          "sha1": "e3fb0f6f2d45629bf137a7d36b010e02f022fbf1",
+          "md5": "5f23db7976be3e29f0d9a663027d119e"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 25,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.slf4j",
+          "module": "slf4j-api",
+          "version": {
+            "requires": "2.0.18"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "it.unimi.dsi",
+          "module": "fastutil",
+          "version": {
+            "requires": "8.5.18"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "space.vectrix.flare",
+          "module": "flare",
+          "version": {
+            "requires": "2.0.1"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "space.vectrix.flare",
+          "module": "flare-fastutil",
+          "version": {
+            "requires": "2.0.1"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "org.jctools",
+          "module": "jctools-core-jdk11",
+          "version": {
+            "requires": "4.0.6"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "org.jetbrains",
+          "module": "annotations",
+          "version": {
+            "requires": "26.1.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-api",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-nbt",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-gson",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-legacy",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-plain",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-serializer-ansi",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.kyori",
+          "module": "adventure-text-logger-slf4j",
+          "version": {
+            "requires": "5.2.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "com.google.code.gson",
+          "module": "gson",
+          "version": {
+            "requires": "2.14.0"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        },
+        {
+          "group": "net.flowstom",
+          "module": "nightstorm-data",
+          "version": {
+            "requires": "2026.07.22-26.3-snapshot-5"
+          },
+          "excludes": [
+            {
+              "group": "org.checkerframework",
+              "module": "checker-qual"
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "name": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
+          "url": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
+          "size": 4218447,
+          "sha512": "13a1b075546e0ccd4fcc41ff84c5fc3f5f33a63622e7209ceb383508b45e944d5c2cee6fd91683501d75665b376d18e203e26e33eb7c8d1de060a77d8029d81e",
+          "sha256": "deca553da709cf3a13f60b95de34e180edf4717f2b6de16bb73823541cb3fbac",
+          "sha1": "e3fb0f6f2d45629bf137a7d36b010e02f022fbf1",
+          "md5": "5f23db7976be3e29f0d9a663027d119e"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "nightstorm-2026.07.22-26.3-snapshot-5-sources.jar",
+          "url": "nightstorm-2026.07.22-26.3-snapshot-5-sources.jar",
+          "size": 1509978,
+          "sha512": "8e81ffa4c55b0931aad1b2e2b8a1edfe15cbdb577925d3481b40c4e10fdaaece631cc752325f3140137fc40b68a9a20428596cda91b9b5b2a14f9cdf2c8f3fc7",
+          "sha256": "aad9780622fb1f071efa67c0184563fd90b967c972677722f2885b8eb074eb47",
+          "sha1": "77996b7937e90c426389a2ec93535b2a18e6123a",
+          "md5": "7e365fb876ef04334ca259f01ea037bc"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "nightstorm-2026.07.22-26.3-snapshot-5-javadoc.jar",
+          "url": "nightstorm-2026.07.22-26.3-snapshot-5-javadoc.jar",
+          "size": 13981024,
+          "sha512": "f3b19b23bf7522817365d8f462f9f4ae384379ef406d938de8b60e363eb21e5e42e28c6468fe15f5096d19ccf17cc69a45f02b1b505ec71486dc9597b3fd5bfa",
+          "sha256": "21e71b23e2782570a9139d72eedffa29437db97be104ecc1069e46ec063291ff",
+          "sha1": "915df20a6ec94ff3d1da834444cd09d4964bd900",
+          "md5": "4c217c48530e658e17436e27b0f7acbf"
+        }
+      ]
+    }
+  ]
+}
