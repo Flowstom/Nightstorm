@@ -69,6 +69,8 @@ public interface DamageTypeTags {
 
     TagKey<DamageType> NO_KNOCKBACK = TagKey.unsafeOf("no_knockback");
 
+    TagKey<DamageType> NO_WOLF_RETALIATION = TagKey.unsafeOf("no_wolf_retaliation");
+
     TagKey<DamageType> PANIC_CAUSES = TagKey.unsafeOf("panic_causes");
 
     TagKey<DamageType> PANIC_ENVIRONMENTAL_CAUSES = TagKey.unsafeOf("panic_environmental_causes");

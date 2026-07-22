@@ -15,6 +15,7 @@ final class RegistriesImpl {
         for (DynamicRegistry<?> registry : configurationRegistries(registries)) {
             packets.add(registry.registryDataPacket(registries, excludeVanilla));
         }
+        NightstormRegistryData.appendPackets(packets, configurationRegistries(registries), excludeVanilla);
         return packets;
     }
 
@@ -23,6 +24,7 @@ final class RegistriesImpl {
         for (Registry<?> registry : tagRegistries(registries)) {
             entries.add(registry.tagRegistry());
         }
+        NightstormRegistryData.appendTags(entries, tagRegistries(registries));
         return new TagsPacket(entries);
     }
 

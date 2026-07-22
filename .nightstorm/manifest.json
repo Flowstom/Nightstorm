@@ -1,0 +1,12 @@
+{
+  "minecraftVersion": "26.3-snapshot-5",
+  "minestomRepository": "Minestom/Minestom",
+  "minestomTag": "2026.07.22-26.2",
+  "minestomReleaseDate": "2026.07.22",
+  "minestomDataGeneratorRepository": "Minestom/MinestomDataGenerator",
+  "minestomDataGeneratorCommit": "23b77b8bb8205a8aaf8698794f98312cc73bf436",
+  "branch": "nightstorm/2026.07.22-26.2/26.3-snapshot-5",
+  "baseRef": "2026.07.22-26.2",
+  "reason": "new-minestom-stream",
+  "artifactVersion": "2026.07.22-26.3-snapshot-5"
+}

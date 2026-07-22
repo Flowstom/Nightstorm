@@ -1,0 +1,42 @@
+allprojects { project ->
+    project.plugins.withId("maven-publish") {
+        project.publishing {
+            repositories {
+                maven {
+                    name = "NightstormPages"
+                    url = uri(System.getenv("NIGHTSTORM_MAVEN_DIRECTORY"))
+                }
+            }
+        }
+        if (project == rootProject) {
+            def nightstormVersion = System.getenv("NIGHTSTORM_VERSION")
+            project.publishing.publications.create("nightstormData", org.gradle.api.publish.maven.MavenPublication) {
+                groupId = "net.flowstom"
+                artifactId = "nightstorm-data"
+                version = nightstormVersion
+                artifact(project.file(".nightstorm/data.jar"))
+            }
+            // File dependencies are not published. Add the separately published data jar to both
+            // Gradle module metadata and the Maven POM without resolving it during this build.
+            def publishedData = project.configurations.dependencyScope("nightstormPublishedData").get()
+            project.dependencies.add(publishedData.name, "net.flowstom:nightstorm-data:${nightstormVersion}")
+            project.configurations.named("runtimeElements") {
+                extendsFrom(publishedData)
+            }
+        }
+    }
+    project.tasks.withType(Sign).configureEach {
+        enabled = false
+    }
+}
+
+gradle.projectsEvaluated {
+    if (rootProject.plugins.hasPlugin("maven-publish")) {
+        def nightstormVersion = System.getenv("NIGHTSTORM_VERSION")
+        rootProject.publishing.publications.named("maven", org.gradle.api.publish.maven.MavenPublication) {
+            groupId = "net.flowstom"
+            artifactId = "nightstorm"
+            version = nightstormVersion
+        }
+    }
+}

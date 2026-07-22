@@ -205,6 +205,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> BLACK_WOOL = RegistryKey.unsafeOf("black_wool");
 
+    RegistryKey<Block> BLACK_WOOL_SLAB = RegistryKey.unsafeOf("black_wool_slab");
+
+    RegistryKey<Block> BLACK_WOOL_STAIRS = RegistryKey.unsafeOf("black_wool_stairs");
+
     RegistryKey<Block> BLACKSTONE = RegistryKey.unsafeOf("blackstone");
 
     RegistryKey<Block> BLACKSTONE_SLAB = RegistryKey.unsafeOf("blackstone_slab");
@@ -246,6 +250,10 @@ public interface BlockKeys {
     RegistryKey<Block> BLUE_WALL_BANNER = RegistryKey.unsafeOf("blue_wall_banner");
 
     RegistryKey<Block> BLUE_WOOL = RegistryKey.unsafeOf("blue_wool");
+
+    RegistryKey<Block> BLUE_WOOL_SLAB = RegistryKey.unsafeOf("blue_wool_slab");
+
+    RegistryKey<Block> BLUE_WOOL_STAIRS = RegistryKey.unsafeOf("blue_wool_stairs");
 
     RegistryKey<Block> BONE_BLOCK = RegistryKey.unsafeOf("bone_block");
 
@@ -300,6 +308,10 @@ public interface BlockKeys {
     RegistryKey<Block> BROWN_WALL_BANNER = RegistryKey.unsafeOf("brown_wall_banner");
 
     RegistryKey<Block> BROWN_WOOL = RegistryKey.unsafeOf("brown_wool");
+
+    RegistryKey<Block> BROWN_WOOL_SLAB = RegistryKey.unsafeOf("brown_wool_slab");
+
+    RegistryKey<Block> BROWN_WOOL_STAIRS = RegistryKey.unsafeOf("brown_wool_stairs");
 
     RegistryKey<Block> BUBBLE_COLUMN = RegistryKey.unsafeOf("bubble_column");
 
@@ -603,6 +615,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> CYAN_WOOL = RegistryKey.unsafeOf("cyan_wool");
 
+    RegistryKey<Block> CYAN_WOOL_SLAB = RegistryKey.unsafeOf("cyan_wool_slab");
+
+    RegistryKey<Block> CYAN_WOOL_STAIRS = RegistryKey.unsafeOf("cyan_wool_stairs");
+
     RegistryKey<Block> DAMAGED_ANVIL = RegistryKey.unsafeOf("damaged_anvil");
 
     RegistryKey<Block> DANDELION = RegistryKey.unsafeOf("dandelion");
@@ -905,6 +921,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> GRAY_WOOL = RegistryKey.unsafeOf("gray_wool");
 
+    RegistryKey<Block> GRAY_WOOL_SLAB = RegistryKey.unsafeOf("gray_wool_slab");
+
+    RegistryKey<Block> GRAY_WOOL_STAIRS = RegistryKey.unsafeOf("gray_wool_stairs");
+
     RegistryKey<Block> GREEN_BANNER = RegistryKey.unsafeOf("green_banner");
 
     RegistryKey<Block> GREEN_BED = RegistryKey.unsafeOf("green_bed");
@@ -932,6 +952,10 @@ public interface BlockKeys {
     RegistryKey<Block> GREEN_WALL_BANNER = RegistryKey.unsafeOf("green_wall_banner");
 
     RegistryKey<Block> GREEN_WOOL = RegistryKey.unsafeOf("green_wool");
+
+    RegistryKey<Block> GREEN_WOOL_SLAB = RegistryKey.unsafeOf("green_wool_slab");
+
+    RegistryKey<Block> GREEN_WOOL_STAIRS = RegistryKey.unsafeOf("green_wool_stairs");
 
     RegistryKey<Block> GRINDSTONE = RegistryKey.unsafeOf("grindstone");
 
@@ -1083,6 +1107,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> LIGHT_BLUE_WOOL = RegistryKey.unsafeOf("light_blue_wool");
 
+    RegistryKey<Block> LIGHT_BLUE_WOOL_SLAB = RegistryKey.unsafeOf("light_blue_wool_slab");
+
+    RegistryKey<Block> LIGHT_BLUE_WOOL_STAIRS = RegistryKey.unsafeOf("light_blue_wool_stairs");
+
     RegistryKey<Block> LIGHT_GRAY_BANNER = RegistryKey.unsafeOf("light_gray_banner");
 
     RegistryKey<Block> LIGHT_GRAY_BED = RegistryKey.unsafeOf("light_gray_bed");
@@ -1110,6 +1138,10 @@ public interface BlockKeys {
     RegistryKey<Block> LIGHT_GRAY_WALL_BANNER = RegistryKey.unsafeOf("light_gray_wall_banner");
 
     RegistryKey<Block> LIGHT_GRAY_WOOL = RegistryKey.unsafeOf("light_gray_wool");
+
+    RegistryKey<Block> LIGHT_GRAY_WOOL_SLAB = RegistryKey.unsafeOf("light_gray_wool_slab");
+
+    RegistryKey<Block> LIGHT_GRAY_WOOL_STAIRS = RegistryKey.unsafeOf("light_gray_wool_stairs");
 
     RegistryKey<Block> LIGHT_WEIGHTED_PRESSURE_PLATE = RegistryKey.unsafeOf("light_weighted_pressure_plate");
 
@@ -1149,6 +1181,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> LIME_WOOL = RegistryKey.unsafeOf("lime_wool");
 
+    RegistryKey<Block> LIME_WOOL_SLAB = RegistryKey.unsafeOf("lime_wool_slab");
+
+    RegistryKey<Block> LIME_WOOL_STAIRS = RegistryKey.unsafeOf("lime_wool_stairs");
+
     RegistryKey<Block> LODESTONE = RegistryKey.unsafeOf("lodestone");
 
     RegistryKey<Block> LOOM = RegistryKey.unsafeOf("loom");
@@ -1180,6 +1216,10 @@ public interface BlockKeys {
     RegistryKey<Block> MAGENTA_WALL_BANNER = RegistryKey.unsafeOf("magenta_wall_banner");
 
     RegistryKey<Block> MAGENTA_WOOL = RegistryKey.unsafeOf("magenta_wool");
+
+    RegistryKey<Block> MAGENTA_WOOL_SLAB = RegistryKey.unsafeOf("magenta_wool_slab");
+
+    RegistryKey<Block> MAGENTA_WOOL_STAIRS = RegistryKey.unsafeOf("magenta_wool_stairs");
 
     RegistryKey<Block> MAGMA_BLOCK = RegistryKey.unsafeOf("magma_block");
 
@@ -1353,6 +1393,8 @@ public interface BlockKeys {
 
     RegistryKey<Block> ORANGE_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("orange_glazed_terracotta");
 
+    RegistryKey<Block> ORANGE_POPLAR_LEAVES = RegistryKey.unsafeOf("orange_poplar_leaves");
+
     RegistryKey<Block> ORANGE_SHULKER_BOX = RegistryKey.unsafeOf("orange_shulker_box");
 
     RegistryKey<Block> ORANGE_STAINED_GLASS = RegistryKey.unsafeOf("orange_stained_glass");
@@ -1366,6 +1408,10 @@ public interface BlockKeys {
     RegistryKey<Block> ORANGE_WALL_BANNER = RegistryKey.unsafeOf("orange_wall_banner");
 
     RegistryKey<Block> ORANGE_WOOL = RegistryKey.unsafeOf("orange_wool");
+
+    RegistryKey<Block> ORANGE_WOOL_SLAB = RegistryKey.unsafeOf("orange_wool_slab");
+
+    RegistryKey<Block> ORANGE_WOOL_STAIRS = RegistryKey.unsafeOf("orange_wool_stairs");
 
     RegistryKey<Block> OXEYE_DAISY = RegistryKey.unsafeOf("oxeye_daisy");
 
@@ -1487,6 +1533,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> PINK_WOOL = RegistryKey.unsafeOf("pink_wool");
 
+    RegistryKey<Block> PINK_WOOL_SLAB = RegistryKey.unsafeOf("pink_wool_slab");
+
+    RegistryKey<Block> PINK_WOOL_STAIRS = RegistryKey.unsafeOf("pink_wool_stairs");
+
     RegistryKey<Block> PISTON = RegistryKey.unsafeOf("piston");
 
     RegistryKey<Block> PISTON_HEAD = RegistryKey.unsafeOf("piston_head");
@@ -1575,6 +1625,40 @@ public interface BlockKeys {
 
     RegistryKey<Block> POLISHED_TUFF_WALL = RegistryKey.unsafeOf("polished_tuff_wall");
 
+    RegistryKey<Block> POPLAR_BUTTON = RegistryKey.unsafeOf("poplar_button");
+
+    RegistryKey<Block> POPLAR_DOOR = RegistryKey.unsafeOf("poplar_door");
+
+    RegistryKey<Block> POPLAR_FENCE = RegistryKey.unsafeOf("poplar_fence");
+
+    RegistryKey<Block> POPLAR_FENCE_GATE = RegistryKey.unsafeOf("poplar_fence_gate");
+
+    RegistryKey<Block> POPLAR_HANGING_SIGN = RegistryKey.unsafeOf("poplar_hanging_sign");
+
+    RegistryKey<Block> POPLAR_LOG = RegistryKey.unsafeOf("poplar_log");
+
+    RegistryKey<Block> POPLAR_PLANKS = RegistryKey.unsafeOf("poplar_planks");
+
+    RegistryKey<Block> POPLAR_PRESSURE_PLATE = RegistryKey.unsafeOf("poplar_pressure_plate");
+
+    RegistryKey<Block> POPLAR_SAPLING = RegistryKey.unsafeOf("poplar_sapling");
+
+    RegistryKey<Block> POPLAR_SHELF = RegistryKey.unsafeOf("poplar_shelf");
+
+    RegistryKey<Block> POPLAR_SIGN = RegistryKey.unsafeOf("poplar_sign");
+
+    RegistryKey<Block> POPLAR_SLAB = RegistryKey.unsafeOf("poplar_slab");
+
+    RegistryKey<Block> POPLAR_STAIRS = RegistryKey.unsafeOf("poplar_stairs");
+
+    RegistryKey<Block> POPLAR_TRAPDOOR = RegistryKey.unsafeOf("poplar_trapdoor");
+
+    RegistryKey<Block> POPLAR_WALL_HANGING_SIGN = RegistryKey.unsafeOf("poplar_wall_hanging_sign");
+
+    RegistryKey<Block> POPLAR_WALL_SIGN = RegistryKey.unsafeOf("poplar_wall_sign");
+
+    RegistryKey<Block> POPLAR_WOOD = RegistryKey.unsafeOf("poplar_wood");
+
     RegistryKey<Block> POPPY = RegistryKey.unsafeOf("poppy");
 
     RegistryKey<Block> POTATOES = RegistryKey.unsafeOf("potatoes");
@@ -1638,6 +1722,8 @@ public interface BlockKeys {
     RegistryKey<Block> POTTED_PALE_OAK_SAPLING = RegistryKey.unsafeOf("potted_pale_oak_sapling");
 
     RegistryKey<Block> POTTED_PINK_TULIP = RegistryKey.unsafeOf("potted_pink_tulip");
+
+    RegistryKey<Block> POTTED_POPLAR_SAPLING = RegistryKey.unsafeOf("potted_poplar_sapling");
 
     RegistryKey<Block> POTTED_POPPY = RegistryKey.unsafeOf("potted_poppy");
 
@@ -1709,6 +1795,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> PURPLE_WOOL = RegistryKey.unsafeOf("purple_wool");
 
+    RegistryKey<Block> PURPLE_WOOL_SLAB = RegistryKey.unsafeOf("purple_wool_slab");
+
+    RegistryKey<Block> PURPLE_WOOL_STAIRS = RegistryKey.unsafeOf("purple_wool_stairs");
+
     RegistryKey<Block> PURPUR_BLOCK = RegistryKey.unsafeOf("purpur_block");
 
     RegistryKey<Block> PURPUR_PILLAR = RegistryKey.unsafeOf("purpur_pillar");
@@ -1763,6 +1853,8 @@ public interface BlockKeys {
 
     RegistryKey<Block> RED_NETHER_BRICKS = RegistryKey.unsafeOf("red_nether_bricks");
 
+    RegistryKey<Block> RED_POPLAR_LEAVES = RegistryKey.unsafeOf("red_poplar_leaves");
+
     RegistryKey<Block> RED_SAND = RegistryKey.unsafeOf("red_sand");
 
     RegistryKey<Block> RED_SANDSTONE = RegistryKey.unsafeOf("red_sandstone");
@@ -1772,6 +1864,8 @@ public interface BlockKeys {
     RegistryKey<Block> RED_SANDSTONE_STAIRS = RegistryKey.unsafeOf("red_sandstone_stairs");
 
     RegistryKey<Block> RED_SANDSTONE_WALL = RegistryKey.unsafeOf("red_sandstone_wall");
+
+    RegistryKey<Block> RED_SHRUB = RegistryKey.unsafeOf("red_shrub");
 
     RegistryKey<Block> RED_SHULKER_BOX = RegistryKey.unsafeOf("red_shulker_box");
 
@@ -1786,6 +1880,10 @@ public interface BlockKeys {
     RegistryKey<Block> RED_WALL_BANNER = RegistryKey.unsafeOf("red_wall_banner");
 
     RegistryKey<Block> RED_WOOL = RegistryKey.unsafeOf("red_wool");
+
+    RegistryKey<Block> RED_WOOL_SLAB = RegistryKey.unsafeOf("red_wool_slab");
+
+    RegistryKey<Block> RED_WOOL_STAIRS = RegistryKey.unsafeOf("red_wool_stairs");
 
     RegistryKey<Block> REDSTONE_BLOCK = RegistryKey.unsafeOf("redstone_block");
 
@@ -1850,6 +1948,8 @@ public interface BlockKeys {
     RegistryKey<Block> SEA_PICKLE = RegistryKey.unsafeOf("sea_pickle");
 
     RegistryKey<Block> SEAGRASS = RegistryKey.unsafeOf("seagrass");
+
+    RegistryKey<Block> SHELF_MUSHROOM = RegistryKey.unsafeOf("shelf_mushroom");
 
     RegistryKey<Block> SHORT_DRY_GRASS = RegistryKey.unsafeOf("short_dry_grass");
 
@@ -1981,6 +2081,8 @@ public interface BlockKeys {
 
     RegistryKey<Block> STONECUTTER = RegistryKey.unsafeOf("stonecutter");
 
+    RegistryKey<Block> STRAW_BED = RegistryKey.unsafeOf("straw_bed");
+
     RegistryKey<Block> STRIPPED_ACACIA_LOG = RegistryKey.unsafeOf("stripped_acacia_log");
 
     RegistryKey<Block> STRIPPED_ACACIA_WOOD = RegistryKey.unsafeOf("stripped_acacia_wood");
@@ -2018,6 +2120,10 @@ public interface BlockKeys {
     RegistryKey<Block> STRIPPED_PALE_OAK_LOG = RegistryKey.unsafeOf("stripped_pale_oak_log");
 
     RegistryKey<Block> STRIPPED_PALE_OAK_WOOD = RegistryKey.unsafeOf("stripped_pale_oak_wood");
+
+    RegistryKey<Block> STRIPPED_POPLAR_LOG = RegistryKey.unsafeOf("stripped_poplar_log");
+
+    RegistryKey<Block> STRIPPED_POPLAR_WOOD = RegistryKey.unsafeOf("stripped_poplar_wood");
 
     RegistryKey<Block> STRIPPED_SPRUCE_LOG = RegistryKey.unsafeOf("stripped_spruce_log");
 
@@ -2363,6 +2469,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> WHITE_WOOL = RegistryKey.unsafeOf("white_wool");
 
+    RegistryKey<Block> WHITE_WOOL_SLAB = RegistryKey.unsafeOf("white_wool_slab");
+
+    RegistryKey<Block> WHITE_WOOL_STAIRS = RegistryKey.unsafeOf("white_wool_stairs");
+
     RegistryKey<Block> WILDFLOWERS = RegistryKey.unsafeOf("wildflowers");
 
     RegistryKey<Block> WITHER_ROSE = RegistryKey.unsafeOf("wither_rose");
@@ -2387,6 +2497,8 @@ public interface BlockKeys {
 
     RegistryKey<Block> YELLOW_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("yellow_glazed_terracotta");
 
+    RegistryKey<Block> YELLOW_POPLAR_LEAVES = RegistryKey.unsafeOf("yellow_poplar_leaves");
+
     RegistryKey<Block> YELLOW_SHULKER_BOX = RegistryKey.unsafeOf("yellow_shulker_box");
 
     RegistryKey<Block> YELLOW_STAINED_GLASS = RegistryKey.unsafeOf("yellow_stained_glass");
@@ -2398,6 +2510,10 @@ public interface BlockKeys {
     RegistryKey<Block> YELLOW_WALL_BANNER = RegistryKey.unsafeOf("yellow_wall_banner");
 
     RegistryKey<Block> YELLOW_WOOL = RegistryKey.unsafeOf("yellow_wool");
+
+    RegistryKey<Block> YELLOW_WOOL_SLAB = RegistryKey.unsafeOf("yellow_wool_slab");
+
+    RegistryKey<Block> YELLOW_WOOL_STAIRS = RegistryKey.unsafeOf("yellow_wool_stairs");
 
     RegistryKey<Block> ZOMBIE_HEAD = RegistryKey.unsafeOf("zombie_head");
 

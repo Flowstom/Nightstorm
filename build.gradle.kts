@@ -40,7 +40,7 @@ dependencies {
     // Core dependencies
     api(libs.bundles.adventure)
     implementation(libs.slf4j)
-    implementation(libs.minestomData)
+    implementation(files(rootProject.file(".nightstorm/data.jar")))
 
     // Performance/data structures
     implementation(libs.fastutil)

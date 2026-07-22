@@ -16,6 +16,7 @@ import net.minestom.server.network.packet.client.login.ClientLoginPluginResponse
 import net.minestom.server.network.packet.client.login.ClientLoginStartPacket;
 import net.minestom.server.network.packet.client.play.*;
 import net.minestom.server.network.packet.client.status.StatusRequestPacket;
+import net.minestom.server.network.packet.nightstorm.*;
 import net.minestom.server.network.packet.server.ServerPacket;
 import net.minestom.server.network.packet.server.common.*;
 import net.minestom.server.network.packet.server.configuration.*;
@@ -198,6 +199,7 @@ public final class PacketVanilla {
             entry(RegistryDataPacket.class, RegistryDataPacket.SERIALIZER),
             entry(ResourcePackPopPacket.class, ResourcePackPopPacket.SERIALIZER),
             entry(ResourcePackPushPacket.class, ResourcePackPushPacket.SERIALIZER),
+            entry(NightstormConfigurationClientboundPostEffectsPacket.class, NightstormConfigurationClientboundPostEffectsPacket.SERIALIZER),
             entry(CookieStorePacket.class, CookieStorePacket.SERIALIZER),
             entry(TransferPacket.class, TransferPacket.SERIALIZER),
             entry(UpdateEnabledFeaturesPacket.class, UpdateEnabledFeaturesPacket.SERIALIZER),
@@ -293,6 +295,7 @@ public final class PacketVanilla {
             entry(ResetScorePacket.class, ResetScorePacket.SERIALIZER),
             entry(ResourcePackPopPacket.class, ResourcePackPopPacket.SERIALIZER),
             entry(ResourcePackPushPacket.class, ResourcePackPushPacket.SERIALIZER),
+            entry(NightstormPlayClientboundPostEffectsPacket.class, NightstormPlayClientboundPostEffectsPacket.SERIALIZER),
             entry(RespawnPacket.class, RespawnPacket.SERIALIZER),
             entry(EntityHeadLookPacket.class, EntityHeadLookPacket.SERIALIZER),
             entry(MultiBlockChangePacket.class, MultiBlockChangePacket.SERIALIZER),

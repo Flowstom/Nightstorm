@@ -25,25 +25,27 @@ public record ClientUpdateSignPacket(
         }
     }
 
-    public static final NetworkBuffer.Type<ClientUpdateSignPacket> SERIALIZER = new NetworkBuffer.Type<>() {
-        @Override
-        public void write(NetworkBuffer buffer, ClientUpdateSignPacket value) {
-            buffer.write(BLOCK_POSITION, value.blockPosition);
-            buffer.write(BOOLEAN, value.isFrontText);
-            buffer.write(STRING, value.lines.get(0));
-            buffer.write(STRING, value.lines.get(1));
-            buffer.write(STRING, value.lines.get(2));
-            buffer.write(STRING, value.lines.get(3));
-        }
-
-        @Override
-        public ClientUpdateSignPacket read(NetworkBuffer buffer) {
-            return new ClientUpdateSignPacket(buffer.read(BLOCK_POSITION), buffer.read(BOOLEAN), readLines(buffer));
-        }
-    };
-
-    private static List<String> readLines(NetworkBuffer reader) {
-        return List.of(reader.read(STRING), reader.read(STRING),
-                reader.read(STRING), reader.read(STRING));
+    public static final NetworkBuffer.Type<ClientUpdateSignPacket> SERIALIZER = new NetworkBuffer.Type<ClientUpdateSignPacket>() {
+    @Override
+    public void write(NetworkBuffer buffer, ClientUpdateSignPacket value) {
+        buffer.write(BLOCK_POSITION, value.blockPosition());
+            buffer.write(STRING, value.lines().get(0));
+            buffer.write(STRING, value.lines().get(1));
+            buffer.write(STRING, value.lines().get(2));
+            buffer.write(STRING, value.lines().get(3));
+        buffer.write(NetworkBuffer.VAR_INT, value.isFrontText() ? 1 : 0);
     }
+
+    @Override
+    public ClientUpdateSignPacket read(NetworkBuffer buffer) {
+        var objectValue = buffer.read(BLOCK_POSITION);
+        var stringValues = List.of(buffer.read(STRING), buffer.read(STRING), buffer.read(STRING), buffer.read(STRING));
+        int booleanValueId = buffer.read(NetworkBuffer.VAR_INT);
+        boolean booleanValue;
+        if (booleanValueId == 1) booleanValue = true;
+        else if (booleanValueId == 0) booleanValue = false;
+        else throw new IllegalArgumentException("Unknown binary enum id: " + booleanValueId);
+        return new ClientUpdateSignPacket(objectValue, booleanValue, stringValues);
+    }
+};
 }

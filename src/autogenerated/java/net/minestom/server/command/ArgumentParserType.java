@@ -123,7 +123,11 @@ public enum ArgumentParserType implements StaticProtocolObject<ArgumentParserTyp
 
     LOOT_MODIFIER("loot_modifier"),
 
+    SLOT_SOURCE("slot_source"),
+
     DIALOG("dialog"),
+
+    FEATURE("feature"),
 
     UUID("uuid");
 

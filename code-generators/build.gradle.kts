@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     // Provides the input JSON to generate from
-    implementation(libs.minestomData)
+    implementation(files(rootProject.file(".nightstorm/data.jar")))
 
     // Common
     implementation(libs.jetbrainsAnnotations)

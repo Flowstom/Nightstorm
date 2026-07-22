@@ -45,8 +45,6 @@ public interface MaterialTags {
 
     TagKey<Material> BREAKS_DECORATED_POTS = TagKey.unsafeOf("breaks_decorated_pots");
 
-    TagKey<Material> BREWING_FUEL = TagKey.unsafeOf("brewing_fuel");
-
     TagKey<Material> BUNDLES = TagKey.unsafeOf("bundles");
 
     TagKey<Material> BUTTONS = TagKey.unsafeOf("buttons");
@@ -105,6 +103,8 @@ public interface MaterialTags {
 
     TagKey<Material> CRIMSON_STEMS = TagKey.unsafeOf("crimson_stems");
 
+    TagKey<Material> CUSHIONS = TagKey.unsafeOf("cushions");
+
     TagKey<Material> DAMPENS_VIBRATIONS = TagKey.unsafeOf("dampens_vibrations");
 
     TagKey<Material> DARK_OAK_LOGS = TagKey.unsafeOf("dark_oak_logs");
@@ -120,6 +120,8 @@ public interface MaterialTags {
     TagKey<Material> DIRT = TagKey.unsafeOf("dirt");
 
     TagKey<Material> DOORS = TagKey.unsafeOf("doors");
+
+    TagKey<Material> DOUSES_CAMPFIRES = TagKey.unsafeOf("douses_campfires");
 
     TagKey<Material> DROWNED_PREFERRED_WEAPONS = TagKey.unsafeOf("drowned_preferred_weapons");
 
@@ -265,6 +267,8 @@ public interface MaterialTags {
 
     TagKey<Material> MUD = TagKey.unsafeOf("mud");
 
+    TagKey<Material> MUSHROOMS = TagKey.unsafeOf("mushrooms");
+
     TagKey<Material> NAUTILUS_BUCKET_FOOD = TagKey.unsafeOf("nautilus_bucket_food");
 
     TagKey<Material> NAUTILUS_FOOD = TagKey.unsafeOf("nautilus_food");
@@ -280,6 +284,8 @@ public interface MaterialTags {
     TagKey<Material> OAK_LOGS = TagKey.unsafeOf("oak_logs");
 
     TagKey<Material> OCELOT_FOOD = TagKey.unsafeOf("ocelot_food");
+
+    TagKey<Material> ORES = TagKey.unsafeOf("ores");
 
     TagKey<Material> PALE_OAK_LOGS = TagKey.unsafeOf("pale_oak_logs");
 
@@ -308,6 +314,8 @@ public interface MaterialTags {
     TagKey<Material> PILLAGER_PREFERRED_WEAPONS = TagKey.unsafeOf("pillager_preferred_weapons");
 
     TagKey<Material> PLANKS = TagKey.unsafeOf("planks");
+
+    TagKey<Material> POPLAR_LOGS = TagKey.unsafeOf("poplar_logs");
 
     TagKey<Material> RABBIT_FOOD = TagKey.unsafeOf("rabbit_food");
 
@@ -456,6 +464,10 @@ public interface MaterialTags {
     TagKey<Material> WOOL = TagKey.unsafeOf("wool");
 
     TagKey<Material> WOOL_CARPETS = TagKey.unsafeOf("wool_carpets");
+
+    TagKey<Material> WOOL_SLABS = TagKey.unsafeOf("wool_slabs");
+
+    TagKey<Material> WOOL_STAIRS = TagKey.unsafeOf("wool_stairs");
 
     TagKey<Material> ZOMBIE_HORSE_FOOD = TagKey.unsafeOf("zombie_horse_food");
 }
