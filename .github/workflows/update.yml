@@ -1,0 +1,120 @@
+name: Update Nightstorm
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightstorm-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build Nightstorm
+        run: ./gradlew installDist --no-daemon
+
+      - name: Plan update
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          build/install/nightstorm/bin/nightstorm plan --output "$RUNNER_TEMP/plan.json"
+          echo "branch=$(jq -r '.branch' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact-version=$(jq -r '.artifactVersion' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
+          echo "minecraft_type=$(jq -r '.minecraftType' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$(jq -r '.branch' "$RUNNER_TEMP/plan.json")"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare generated source
+        id: prepare
+        if: steps.plan.outputs.exists == 'false'
+        env:
+          NIGHTSTORM_REPOSITORY: ${{ github.repository }}
+        run: |
+          scripts/prepare-source.sh "$RUNNER_TEMP/plan.json" "$RUNNER_TEMP/generated"
+          echo "java-version=$(tr -d '\n' < "$RUNNER_TEMP/generated/.nightstorm/java-version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        if: steps.plan.outputs.exists == 'false'
+        with:
+          distribution: temurin
+          java-version: ${{ steps.prepare.outputs.java-version }}
+
+      - name: Generate and build
+        if: steps.plan.outputs.exists == 'false'
+        run: scripts/finalize-source.sh "$RUNNER_TEMP/plan.json" "$RUNNER_TEMP/generated" "$GITHUB_WORKSPACE/build/install/nightstorm/bin/nightstorm"
+
+      - name: Push generated branch
+        if: steps.plan.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/generated"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "Nightstorm ${{ steps.plan.outputs.artifact-version }}"
+          git remote remove origin || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "HEAD:refs/heads/${{ steps.plan.outputs.branch }}"
+
+      - name: Publish Maven repository
+        if: steps.plan.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NIGHTSTORM_VERSION: ${{ steps.plan.outputs.artifact-version }}
+        run: |
+          pages_directory="$RUNNER_TEMP/maven-pages"
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/gh-pages; then
+            git clone --depth 1 --branch gh-pages "https://github.com/${GITHUB_REPOSITORY}.git" "$pages_directory"
+          else
+            git init --initial-branch=gh-pages "$pages_directory"
+          fi
+          touch "$pages_directory/.nojekyll"
+          printf 'nightstorm.flowstom.net\n' > "$pages_directory/CNAME"
+          cp "$GITHUB_WORKSPACE/pages/index.html" "$pages_directory/index.html"
+          cd "$RUNNER_TEMP/generated"
+          NIGHTSTORM_MAVEN_DIRECTORY="$pages_directory" \
+            ./gradlew -I .nightstorm/publish.gradle :publishAllPublicationsToNightstormPagesRepository --no-daemon
+          git -C "$pages_directory" config user.name "github-actions[bot]"
+          git -C "$pages_directory" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$pages_directory" add --all
+          git -C "$pages_directory" commit -m "Publish ${{ steps.plan.outputs.artifact-version }}"
+          git -C "$pages_directory" remote remove origin || true
+          git -C "$pages_directory" remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git -C "$pages_directory" push origin HEAD:refs/heads/gh-pages
+
+      - name: Create GitHub prerelease
+        if: steps.plan.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(
+            "${{ steps.plan.outputs.artifact-version }}"
+            --repo "${GITHUB_REPOSITORY}"
+            --target "${{ steps.plan.outputs.branch }}"
+            --title "Nightstorm ${{ steps.plan.outputs.artifact-version }}"
+            --notes-file "$RUNNER_TEMP/generated/.nightstorm/release-notes.md"
+          )
+          if [ "${{ steps.plan.outputs.minecraft_type }}" = "snapshot" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"

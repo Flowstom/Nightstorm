@@ -1,0 +1,8 @@
+{
+  "githubRepository": "Flowstom/Nightstorm",
+  "minestomRepository": "Minestom/Minestom",
+  "minestomDataGeneratorRepository": "Minestom/MinestomDataGenerator",
+  "minestomDataGeneratorCommit": "23b77b8bb8205a8aaf8698794f98312cc73bf436",
+  "branchPrefix": "nightstorm",
+  "minecraftChannel": "snapshot"
+}
