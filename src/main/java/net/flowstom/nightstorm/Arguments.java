@@ -26,16 +26,20 @@ final class Arguments {
         return values.get(name);
     }
 
+    String required(String name) {
+        final String value = optional(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Missing required --" + name + " argument");
+        }
+        return value;
+    }
+
     Path path(String name, Path defaultValue) {
         final String value = optional(name);
         return value == null ? defaultValue : Path.of(value);
     }
 
     Path requiredPath(String name) {
-        final String value = optional(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Missing required --" + name + " argument");
-        }
-        return Path.of(value);
+        return Path.of(required(name));
     }
 }

@@ -140,6 +140,12 @@ final class PacketMigrationScanner {
                     accept.accept(Migration.optionalEnum(componentPath, enumIds(targetEnumClass), targetEnum));
                     continue;
                 }
+                if (sameComponent(beforeComponent, afterComponent)
+                        && byteArrayBitSetMigration(baseline, target, before, after,
+                        beforeComponent, afterComponent)) {
+                    accept.accept(Migration.byteArrayBitSet(componentPath));
+                    continue;
+                }
                 if (!beforeComponent.descriptor.equals(afterComponent.descriptor)
                         || !Objects.equals(beforeComponent.signature, afterComponent.signature)) {
                     if (equivalentCollectionType(beforeComponent, afterComponent)) continue;
@@ -563,7 +569,7 @@ final class PacketMigrationScanner {
                 final Optional<List<String>> shape;
                 if (codec instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
                         && field.desc.equals(STREAM_CODEC_DESCRIPTOR)) {
-                    final String primitive = primitiveCodec(field.owner, field.name);
+                    final String primitive = primitiveCodec(classes, field.owner, field.name);
                     shape = primitive == null
                             ? streamShape(classes, field.owner, field.name, new HashSet<>())
                             : Optional.of(List.of(primitive));
@@ -577,7 +583,79 @@ final class PacketMigrationScanner {
                 result = candidate;
             }
         }
+        final ComponentCodecShape manual = manualComponentShape(classes, owner, component);
+        if (manual.referenced()) {
+            if (!result.referenced()) return manual;
+            if (!result.shape().equals(manual.shape())) return new ComponentCodecShape(true, Optional.empty());
+        }
         return result;
+    }
+
+    private static boolean byteArrayBitSetMigration(Classes baseline, Classes target, ClassNode beforeOwner,
+                                                    ClassNode afterOwner, RecordComponentNode beforeComponent,
+                                                    RecordComponentNode afterComponent) {
+        if (!beforeComponent.descriptor.equals("Ljava/util/BitSet;")) return false;
+        final ComponentCodecShape before = componentCodecShape(baseline, beforeOwner, beforeComponent);
+        final ComponentCodecShape after = componentCodecShape(target, afterOwner, afterComponent);
+        final boolean candidate = manualBitSetReference(beforeOwner, beforeComponent)
+                && componentReferencesCodec(afterOwner, afterComponent, CODEC_OWNER, "BIT_SET");
+        final boolean proven = before.shape().filter(List.of("BIT_SET(LONG_ARRAY)")::equals).isPresent()
+                && after.shape().filter(List.of("BIT_SET(BYTE_ARRAY)")::equals).isPresent();
+        if (candidate && !proven) {
+            throw new IllegalStateException("Unable to prove BitSet storage migration for component "
+                    + beforeComponent.name);
+        }
+        return proven;
+    }
+
+    private static ComponentCodecShape manualComponentShape(Classes classes, ClassNode owner,
+                                                            RecordComponentNode component) {
+        boolean read = false;
+        boolean write = false;
+        for (MethodNode method : owner.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode call)) continue;
+                if (!call.owner.equals("net/minecraft/network/FriendlyByteBuf")) continue;
+                if (call.name.equals("readBitSet") && call.desc.equals("()Ljava/util/BitSet;")) {
+                    final AbstractInsnNode assignment = nextReal(instruction);
+                    if (assignment instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+                            && field.owner.equals(owner.name) && field.name.equals(component.name)
+                            && field.desc.equals(component.descriptor)) read = true;
+                } else if (call.name.equals("writeBitSet") && call.desc.equals("(Ljava/util/BitSet;)V")) {
+                    final AbstractInsnNode value = previousReal(instruction);
+                    if (value instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
+                            && field.owner.equals(owner.name) && field.name.equals(component.name)
+                            && field.desc.equals(component.descriptor)) write = true;
+                }
+            }
+        }
+        if (!read || !write) return new ComponentCodecShape(read || write, Optional.empty());
+        return new ComponentCodecShape(true, friendlyBitSetIsLongArrayBacked(classes)
+                ? Optional.of(List.of("BIT_SET(LONG_ARRAY)")) : Optional.empty());
+    }
+
+    private static boolean manualBitSetReference(ClassNode owner, RecordComponentNode component) {
+        return manualComponentShapeReferences(owner, component, "readBitSet", "()Ljava/util/BitSet;", Opcodes.PUTFIELD)
+                && manualComponentShapeReferences(owner, component, "writeBitSet", "(Ljava/util/BitSet;)V",
+                Opcodes.GETFIELD);
+    }
+
+    private static boolean manualComponentShapeReferences(ClassNode owner, RecordComponentNode component,
+                                                           String methodName, String methodDescriptor,
+                                                           int fieldOpcode) {
+        for (MethodNode method : owner.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode call)
+                        || !call.owner.equals("net/minecraft/network/FriendlyByteBuf")
+                        || !call.name.equals(methodName) || !call.desc.equals(methodDescriptor)) continue;
+                final AbstractInsnNode fieldInstruction = fieldOpcode == Opcodes.PUTFIELD
+                        ? nextReal(instruction) : previousReal(instruction);
+                if (fieldInstruction instanceof FieldInsnNode field && field.getOpcode() == fieldOpcode
+                        && field.owner.equals(owner.name) && field.name.equals(component.name)
+                        && field.desc.equals(component.descriptor)) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean callsCompositeCodec(MethodNode method) {
@@ -612,7 +690,8 @@ final class PacketMigrationScanner {
             if (node == null) return Optional.empty();
             final MethodNode clinit = node.methods.stream().filter(method -> method.name.equals("<clinit>"))
                     .findFirst().orElse(null);
-            if (clinit == null) return fieldName.equals("STREAM_CODEC") ? manualBufferShape(node) : Optional.empty();
+            if (clinit == null) return fieldName.equals("STREAM_CODEC")
+                    ? manualBufferShape(classes, node) : Optional.empty();
             AbstractInsnNode assignment = null;
             for (AbstractInsnNode instruction : clinit.instructions) {
                 if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTSTATIC
@@ -623,7 +702,7 @@ final class PacketMigrationScanner {
                 }
             }
             if (assignment == null) {
-                return fieldName.equals("STREAM_CODEC") ? manualBufferShape(node) : Optional.empty();
+                return fieldName.equals("STREAM_CODEC") ? manualBufferShape(classes, node) : Optional.empty();
             }
             AbstractInsnNode start = assignment;
             while (start.getPrevious() != null) {
@@ -638,7 +717,7 @@ final class PacketMigrationScanner {
                  instruction = instruction.getNext()) {
                 if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
                         && field.desc.equals(STREAM_CODEC_DESCRIPTOR)) {
-                    final String primitive = primitiveCodec(field.owner, field.name);
+                    final String primitive = primitiveCodec(classes, field.owner, field.name);
                     if (primitive != null) result.add(primitive);
                     else {
                         final Optional<List<String>> nested = streamShape(classes, field.owner, field.name, active);
@@ -649,7 +728,7 @@ final class PacketMigrationScanner {
                     final ClassNode codec = classes.readIfPresent(type.desc);
                     if (codec != null && codec.interfaces.stream()
                             .anyMatch(name -> name.equals("net/minecraft/network/codec/StreamCodec"))) {
-                        final Optional<List<String>> manual = manualBufferShape(codec);
+                        final Optional<List<String>> manual = manualBufferShape(classes, codec);
                         if (manual.isEmpty()) result.add(unknownSegment("codec", type.desc));
                         else result.addAll(manual.get());
                     }
@@ -693,7 +772,7 @@ final class PacketMigrationScanner {
         return "UNKNOWN(" + kind + ':' + value + ')';
     }
 
-    private static String primitiveCodec(String owner, String field) {
+    private static String primitiveCodec(Classes classes, String owner, String field) {
         if (!owner.equals(CODEC_OWNER)) return null;
         return switch (field) {
             case "BOOL" -> "BOOLEAN";
@@ -706,8 +785,77 @@ final class PacketMigrationScanner {
             case "VAR_LONG" -> "VAR_LONG";
             case "FLOAT" -> "FLOAT";
             case "DOUBLE" -> "DOUBLE";
+            case "BYTE_ARRAY" -> "BYTE_ARRAY";
+            case "LONG_ARRAY" -> "LONG_ARRAY";
+            case "BIT_SET" -> byteBufBitSetIsByteArrayBacked(classes) ? "BIT_SET(BYTE_ARRAY)" : null;
             default -> null;
         };
+    }
+
+    private static boolean byteBufBitSetIsByteArrayBacked(Classes classes) {
+        final ClassNode owner = classes.readIfPresent(CODEC_OWNER);
+        if (owner == null) return false;
+        final ClassNode implementation = assignedCodecImplementation(classes, owner, "BIT_SET");
+        if (implementation == null) return false;
+        boolean decode = false;
+        boolean encode = false;
+        for (MethodNode method : implementation.methods) {
+            if (method.name.equals("decode")) {
+                decode |= calls(method, "net/minecraft/network/FriendlyByteBuf", "readByteArray",
+                        "(Lio/netty/buffer/ByteBuf;)[B")
+                        && calls(method, "java/util/BitSet", "valueOf", "([B)Ljava/util/BitSet;");
+            } else if (method.name.equals("encode")) {
+                encode |= calls(method, "java/util/BitSet", "toByteArray", "()[B")
+                        && calls(method, "net/minecraft/network/FriendlyByteBuf", "writeByteArray",
+                        "(Lio/netty/buffer/ByteBuf;[B)V");
+            }
+        }
+        return decode && encode;
+    }
+
+    private static ClassNode assignedCodecImplementation(Classes classes, ClassNode owner, String fieldName) {
+        final MethodNode clinit = owner.methods.stream().filter(method -> method.name.equals("<clinit>"))
+                .findFirst().orElse(null);
+        if (clinit == null) return null;
+        for (AbstractInsnNode instruction : clinit.instructions) {
+            if (!(instruction instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.PUTSTATIC
+                    || !field.owner.equals(owner.name) || !field.name.equals(fieldName)
+                    || !field.desc.equals(STREAM_CODEC_DESCRIPTOR)) continue;
+            final AbstractInsnNode constructor = previousReal(instruction);
+            if (!(constructor instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL
+                    || !call.name.equals("<init>") || !call.desc.equals("()V")) return null;
+            final AbstractInsnNode duplicate = previousReal(constructor);
+            final AbstractInsnNode allocation = duplicate == null ? null : previousReal(duplicate);
+            if (duplicate == null || duplicate.getOpcode() != Opcodes.DUP) return null;
+            if (!(allocation instanceof TypeInsnNode type) || !type.desc.equals(call.owner)) return null;
+            return classes.readIfPresent(type.desc);
+        }
+        return null;
+    }
+
+    private static boolean friendlyBitSetIsLongArrayBacked(Classes classes) {
+        final ClassNode buffer = classes.readIfPresent("net/minecraft/network/FriendlyByteBuf");
+        if (buffer == null) return false;
+        final MethodNode read = method(buffer, "readBitSet", "()Ljava/util/BitSet;");
+        final MethodNode write = method(buffer, "writeBitSet", "(Ljava/util/BitSet;)V");
+        return read != null && write != null
+                && calls(read, buffer.name, "readLongArray", "()[J")
+                && calls(read, "java/util/BitSet", "valueOf", "([J)Ljava/util/BitSet;")
+                && calls(write, "java/util/BitSet", "toLongArray", "()[J")
+                && calls(write, buffer.name, "writeLongArray", "([J)Lnet/minecraft/network/FriendlyByteBuf;");
+    }
+
+    private static MethodNode method(ClassNode owner, String name, String descriptor) {
+        return owner.methods.stream().filter(method -> method.name.equals(name) && method.desc.equals(descriptor))
+                .findFirst().orElse(null);
+    }
+
+    private static boolean calls(MethodNode method, String owner, String name, String descriptor) {
+        for (AbstractInsnNode instruction : method.instructions) {
+            if (instruction instanceof MethodInsnNode call && call.owner.equals(owner) && call.name.equals(name)
+                    && call.desc.equals(descriptor)) return true;
+        }
+        return false;
     }
 
     private static boolean isBinaryEnum(ClassNode node) {
@@ -752,7 +900,7 @@ final class PacketMigrationScanner {
         return result;
     }
 
-    private static Optional<List<String>> manualBufferShape(ClassNode node) {
+    private static Optional<List<String>> manualBufferShape(Classes classes, ClassNode node) {
         final List<String> result = new ArrayList<>();
         boolean decode = false;
         for (MethodNode method : node.methods) {
@@ -772,6 +920,8 @@ final class PacketMigrationScanner {
                     case "readFloat" -> "FLOAT";
                     case "readDouble" -> "DOUBLE";
                     case "readUtf" -> "STRING";
+                    case "readBitSet" -> friendlyBitSetIsLongArrayBacked(classes)
+                            ? "BIT_SET(LONG_ARRAY)" : unknownSegment("read", call.owner + '.' + call.name + call.desc);
                     default -> null;
                 };
                 if (token != null) result.add(token);
@@ -1232,6 +1382,7 @@ final class PacketMigrationScanner {
 
     enum Kind {
         OPTIONAL_ENUM,
+        BYTE_ARRAY_BIT_SET,
         REORDERED_BOOLEAN_ENUM,
         LINEAR_POSITION_PATH,
         APPENDED_BOOLEAN
@@ -1253,6 +1404,10 @@ final class PacketMigrationScanner {
 
         static Migration optionalEnum(List<Integer> path, Map<String, Integer> ids, String targetEnum) {
             return new Migration(null, Kind.OPTIONAL_ENUM, path, ids, targetEnum, -1, -1, false, -1, -1);
+        }
+
+        static Migration byteArrayBitSet(List<Integer> path) {
+            return new Migration(null, Kind.BYTE_ARRAY_BIT_SET, path, Map.of(), "", -1, -1, false, -1, -1);
         }
 
         static Migration reorderedBooleanEnum(List<Integer> path, int fixedSize, int falseId, int trueId) {

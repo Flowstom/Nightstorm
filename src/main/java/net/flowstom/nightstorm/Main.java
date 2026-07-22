@@ -19,6 +19,7 @@ public final class Main {
             case "plan" -> plan(options);
             case "scan-packets" -> scanPackets(options);
             case "update-packets" -> updatePackets(options);
+            case "update-source-width" -> updateSourceWidth(options);
             default -> {
                 usage();
                 System.exit(2);
@@ -59,10 +60,23 @@ public final class Main {
         }
     }
 
+    private static void updateSourceWidth(Arguments options) throws Exception {
+        final var result = SourceWidthUpdater.update(
+                options.requiredPath("source"),
+                options.requiredPath("archive"),
+                options.required("resource"),
+                options.required("value-path"),
+                options.requiredPath("file"),
+                options.required("constant"));
+        System.out.printf("Updated %s to %d for maximum value %d%n",
+                options.required("constant"), result.width(), result.maximumValue());
+    }
+
     private static void usage() {
         System.err.println("Usage:");
         System.err.println("  nightstorm plan --output <plan.json> [--config <config.json>] [--github-token <token>]");
         System.err.println("  nightstorm scan-packets --jar <minecraft-server.jar> --output <packet-schema.json>");
         System.err.println("  nightstorm update-packets --baseline-jar <server.jar> --jar <server.jar> --source <minestom> --output <packet-schema.json>");
+        System.err.println("  nightstorm update-source-width --source <root> --archive <data.jar> --resource <file.json> --value-path <path> --file <source.java> --constant <name>");
     }
 }

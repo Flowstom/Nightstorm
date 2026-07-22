@@ -42,7 +42,8 @@ final class RetainedPacketMigrator {
         final Map<SerializerSlot, PlannedEdit> edits = new LinkedHashMap<>();
         for (PacketMigrationScanner.Migration migration : migrations) {
             final ResolvedType packetType = sources.resolveUnique(migration.packet().className());
-            if (migration.kind() != PacketMigrationScanner.Kind.OPTIONAL_ENUM) {
+            if (migration.kind() != PacketMigrationScanner.Kind.OPTIONAL_ENUM
+                    && migration.kind() != PacketMigrationScanner.Kind.BYTE_ARRAY_BIT_SET) {
                 planSemanticMigration(sources, edits, packetType, migration);
                 continue;
             }
@@ -69,18 +70,22 @@ final class RetainedPacketMigrator {
                 final List<Integer> componentPath = append(resolved.componentPath(), component);
                 final Expression componentCodec = template.getArgument(codecSlot);
                 final boolean leaf = depth + 1 == migration.path().size();
-                final ResolvedType componentType = sources.recordComponentType(owner, component, leaf);
                 if (leaf) {
-                    final ResolvedType enumType = componentType;
-                    requireMatchingEnum(enumType, migration);
                     final FieldLocation field = resolved.field();
                     if (field == null) {
                         throw new IllegalStateException("Serializer component " + migration.path()
                                 + " is not backed by a source field");
                     }
                     final SerializerSlot slot = new SerializerSlot(field.source(), field.owner(), field.name(), componentPath);
-                    final Expression replacement = sources.parseExpression(codecExpression(enumType, migration),
-                            "optional enum codec expression");
+                    final Expression replacement;
+                    if (migration.kind() == PacketMigrationScanner.Kind.OPTIONAL_ENUM) {
+                        final ResolvedType enumType = sources.recordComponentType(owner, component, true);
+                        requireMatchingEnum(enumType, migration);
+                        replacement = sources.parseExpression(codecExpression(enumType, migration),
+                                "optional enum codec expression");
+                    } else {
+                        replacement = byteArrayBitSetCodec(sources, owner, componentCodec, component);
+                    }
                     final PlannedEdit edit = new PlannedEdit(componentCodec, replacement, semanticKey(migration), List.of());
                     final PlannedEdit previous = edits.putIfAbsent(slot, edit);
                     if (previous != null && !previous.semantic().equals(semanticKey(migration))) {
@@ -88,6 +93,7 @@ final class RetainedPacketMigrator {
                                 + owner.qualifiedName());
                     }
                 } else {
+                    final ResolvedType componentType = sources.recordComponentType(owner, component, false);
                     codec = new CodecReference(componentCodec, componentType, resolved.field(), componentPath);
                 }
             }
@@ -118,7 +124,7 @@ final class RetainedPacketMigrator {
             case REORDERED_BOOLEAN_ENUM -> reorderedBooleanSerializer(sources, packetType, current, migration);
             case LINEAR_POSITION_PATH -> linearPositionSerializer(sources, packetType, current, migration);
             case APPENDED_BOOLEAN -> appendedBooleanSerializer(sources, packetType, current, migration.defaultValue());
-            case OPTIONAL_ENUM -> throw new IllegalStateException("Unexpected optional enum migration");
+            case OPTIONAL_ENUM, BYTE_ARRAY_BIT_SET -> throw new IllegalStateException("Unexpected leaf migration");
         };
         final SerializerSlot slot = new SerializerSlot(resolved.field().source(), resolved.field().owner(),
                 resolved.field().name(), List.of());
@@ -413,6 +419,30 @@ final class RetainedPacketMigrator {
         return source.append("        }\n").append(")").toString();
     }
 
+    private static Expression byteArrayBitSetCodec(SourceIndex sources, ResolvedType owner,
+                                                   Expression current, int component) {
+        final Parameter parameter = sources.recordComponent(owner, component);
+        final String bitSet = parameter.getType().asString();
+        if (!bitSet.equals("BitSet") && !bitSet.equals("java.util.BitSet")) {
+            throw new IllegalStateException("Migrated serializer leaf " + component + " in "
+                    + owner.qualifiedName() + " is not a BitSet");
+        }
+        final String existing = current.toString();
+        final String byteArray;
+        if (existing.equals("BITSET")) byteArray = "BYTE_ARRAY";
+        else if (existing.equals("NetworkBuffer.BITSET")) byteArray = "NetworkBuffer.BYTE_ARRAY";
+        else {
+            final String expected = existing.startsWith("NetworkBuffer.")
+                    ? "NetworkBuffer.BYTE_ARRAY.transform" : "BYTE_ARRAY.transform";
+            if (existing.startsWith(expected) && existing.contains(bitSet + "::valueOf")
+                    && existing.contains(bitSet + "::toByteArray")) return current.clone();
+            throw new IllegalStateException("BitSet serializer component " + component + " in "
+                    + owner.qualifiedName() + " does not use BITSET");
+        }
+        return sources.parseExpression(byteArray + ".transform(" + bitSet + "::valueOf, "
+                + bitSet + "::toByteArray)", "byte-array BitSet codec expression");
+    }
+
     private static List<Integer> append(List<Integer> path, int component) {
         final List<Integer> result = new ArrayList<>(path);
         result.add(component);
@@ -498,10 +528,7 @@ final class RetainedPacketMigrator {
         }
 
         private ResolvedType recordComponentType(ResolvedType owner, int ordinal, boolean requireNullable) {
-            if (!(owner.declaration() instanceof RecordDeclaration record) || record.getParameters().size() <= ordinal) {
-                throw new IllegalStateException(owner.qualifiedName() + " is not a record with component " + ordinal);
-            }
-            final Parameter parameter = record.getParameter(ordinal);
+            final Parameter parameter = recordComponent(owner, ordinal);
             if (requireNullable && !isNullable(parameter)) {
                 throw new IllegalStateException("Record component " + ordinal + " in " + owner.qualifiedName()
                         + " is not explicitly nullable");
@@ -511,6 +538,13 @@ final class RetainedPacketMigrator {
                         + " is not a reference type");
             }
             return resolveType(type.getNameWithScope(), owner);
+        }
+
+        private Parameter recordComponent(ResolvedType owner, int ordinal) {
+            if (!(owner.declaration() instanceof RecordDeclaration record) || record.getParameters().size() <= ordinal) {
+                throw new IllegalStateException(owner.qualifiedName() + " is not a record with component " + ordinal);
+            }
+            return record.getParameter(ordinal);
         }
 
         private ResolvedType resolveUnique(String simpleName) {

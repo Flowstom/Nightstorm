@@ -44,6 +44,13 @@ fi
 
 pushd "$target_directory" >/dev/null
 ./gradlew :code-generators:run --no-daemon
+"$nightstorm_bin" update-source-width \
+  --source "$target_directory" \
+  --archive "$target_directory/.nightstorm/data.jar" \
+  --resource "net/minestom/data/block.json" \
+  --value-path "*/states/*/stateId" \
+  --file "src/main/java/net/minestom/server/instance/palette/Palette.java" \
+  --constant "BLOCK_PALETTE_DIRECT_BITS"
 ./gradlew assemble --no-daemon
 popd >/dev/null
 

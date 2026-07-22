@@ -214,6 +214,58 @@ class RetainedPacketMigratorTest {
         assertTrue(migrated.contains("buffer.read(NetworkBuffer.BOOLEAN)"));
     }
 
+    @Test
+    void rewritesNestedBitSetCodecSlotsWithStableQualification() throws Exception {
+        final Path root = sourceRoot();
+        final Path directory = root.resolve("src/main/java/example");
+        write(directory.resolve("Envelope.java"), """
+                package example;
+
+                record Envelope(int x, int z, SectionData data) {
+                    static final NetworkBuffer.Type<Envelope> SERIALIZER = NetworkBufferTemplate.template(
+                            NetworkBuffer.VAR_INT, Envelope::x,
+                            NetworkBuffer.VAR_INT, Envelope::z,
+                            SectionData.NETWORK_TYPE, Envelope::data,
+                            Envelope::new);
+                }
+                """);
+        final Path data = directory.resolve("SectionData.java");
+        write(data, """
+                package example;
+
+                import java.util.BitSet;
+                import java.util.List;
+
+                import static example.NetworkBuffer.BITSET;
+                import static example.NetworkBuffer.BYTE_ARRAY;
+
+                record SectionData(BitSet firstMask, BitSet secondMask, BitSet emptyFirstMask,
+                                   BitSet emptySecondMask, List<byte[]> firstUpdates, List<byte[]> secondUpdates) {
+                    static final NetworkBuffer.Type<SectionData> NETWORK_TYPE = NetworkBufferTemplate.template(
+                            BITSET, SectionData::firstMask,
+                            NetworkBuffer.BITSET, SectionData::secondMask,
+                            BITSET, SectionData::emptyFirstMask,
+                            NetworkBuffer.BITSET, SectionData::emptySecondMask,
+                            BYTE_ARRAY.list(256), SectionData::firstUpdates,
+                            BYTE_ARRAY.list(256), SectionData::secondUpdates,
+                            SectionData::new);
+                }
+                """);
+        final List<PacketMigrationScanner.Migration> migrations = java.util.stream.IntStream.range(0, 4)
+                .mapToObj(index -> bitSetMigration("Envelope", List.of(2, index))).toList();
+
+        RetainedPacketMigrator.apply(root, migrations);
+        final String migrated = Files.readString(data);
+        RetainedPacketMigrator.apply(root, migrations);
+
+        assertEquals(migrated, Files.readString(data));
+        assertEquals(4, occurrences(migrated, "BYTE_ARRAY.transform(BitSet::valueOf, BitSet::toByteArray)"));
+        assertEquals(2, occurrences(migrated,
+                "NetworkBuffer.BYTE_ARRAY.transform(BitSet::valueOf, BitSet::toByteArray)"));
+        assertTrue(!migrated.contains("BITSET, SectionData::"));
+        assertTrue(!migrated.contains("NetworkBuffer.BITSET, SectionData::"));
+    }
+
     private static Path sourceRoot() throws Exception {
         final Path root = Files.createTempDirectory("retained-packet-migrator");
         Files.createDirectories(root.resolve("src/main/java/example"));
@@ -254,6 +306,12 @@ class RetainedPacketMigratorTest {
         return new PacketMigrationScanner.Migration(
                 new PacketUpdater.RetainedPacket(className, className + ".SERIALIZER", "before", "after"),
                 kind, List.of(), Map.of(), "", fixedSize, discriminator, defaultValue);
+    }
+
+    private static PacketMigrationScanner.Migration bitSetMigration(String className, List<Integer> path) {
+        return new PacketMigrationScanner.Migration(
+                new PacketUpdater.RetainedPacket(className, className + ".SERIALIZER", "before", "after"),
+                PacketMigrationScanner.Kind.BYTE_ARRAY_BIT_SET, path, Map.of(), "", -1, -1, false);
     }
 
     private static void write(Path path, String source) throws Exception {
