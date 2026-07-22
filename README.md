@@ -30,4 +30,4 @@ dependencies {
 }
 ```
 
-Replace `<version>` with a version from the available [releases](https://github.com/Flowstom/Nightstorm/releases), for example `2026.07.12-26.3-snapshot-5`.
+Replace `<version>` with a version from the available [releases](https://github.com/Flowstom/Nightstorm/releases), for example `2026.07.22-26.3-snapshot-5`.
