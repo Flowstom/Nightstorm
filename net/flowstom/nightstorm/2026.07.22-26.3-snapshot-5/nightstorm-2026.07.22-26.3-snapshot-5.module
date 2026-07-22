@@ -146,11 +146,11 @@
         {
           "name": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
           "url": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
-          "size": 4218447,
-          "sha512": "13a1b075546e0ccd4fcc41ff84c5fc3f5f33a63622e7209ceb383508b45e944d5c2cee6fd91683501d75665b376d18e203e26e33eb7c8d1de060a77d8029d81e",
-          "sha256": "deca553da709cf3a13f60b95de34e180edf4717f2b6de16bb73823541cb3fbac",
-          "sha1": "e3fb0f6f2d45629bf137a7d36b010e02f022fbf1",
-          "md5": "5f23db7976be3e29f0d9a663027d119e"
+          "size": 4222751,
+          "sha512": "5aaa2915b062c4d7d0e637df42d18ce7869955bcdd8f2eabe8355ae8192ad741a383562ab20a8c16fe4384e28bf5d71428e7012328f22312ab4ded179f92db7e",
+          "sha256": "dd5cd9ad5cf9778c23bd0a00d5dde6d1c34f719321d7cc0b73ca135844cb5cc1",
+          "sha1": "b00b77b02436c547a6ed7bda31c810418c0d8f89",
+          "md5": "3c3b17884a545d81fec3f7c650c672f6"
         }
       ]
     },
@@ -364,11 +364,11 @@
         {
           "name": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
           "url": "nightstorm-2026.07.22-26.3-snapshot-5.jar",
-          "size": 4218447,
-          "sha512": "13a1b075546e0ccd4fcc41ff84c5fc3f5f33a63622e7209ceb383508b45e944d5c2cee6fd91683501d75665b376d18e203e26e33eb7c8d1de060a77d8029d81e",
-          "sha256": "deca553da709cf3a13f60b95de34e180edf4717f2b6de16bb73823541cb3fbac",
-          "sha1": "e3fb0f6f2d45629bf137a7d36b010e02f022fbf1",
-          "md5": "5f23db7976be3e29f0d9a663027d119e"
+          "size": 4222751,
+          "sha512": "5aaa2915b062c4d7d0e637df42d18ce7869955bcdd8f2eabe8355ae8192ad741a383562ab20a8c16fe4384e28bf5d71428e7012328f22312ab4ded179f92db7e",
+          "sha256": "dd5cd9ad5cf9778c23bd0a00d5dde6d1c34f719321d7cc0b73ca135844cb5cc1",
+          "sha1": "b00b77b02436c547a6ed7bda31c810418c0d8f89",
+          "md5": "3c3b17884a545d81fec3f7c650c672f6"
         }
       ]
     },
@@ -384,11 +384,11 @@
         {
           "name": "nightstorm-2026.07.22-26.3-snapshot-5-sources.jar",
           "url": "nightstorm-2026.07.22-26.3-snapshot-5-sources.jar",
-          "size": 1509978,
-          "sha512": "8e81ffa4c55b0931aad1b2e2b8a1edfe15cbdb577925d3481b40c4e10fdaaece631cc752325f3140137fc40b68a9a20428596cda91b9b5b2a14f9cdf2c8f3fc7",
-          "sha256": "aad9780622fb1f071efa67c0184563fd90b967c972677722f2885b8eb074eb47",
-          "sha1": "77996b7937e90c426389a2ec93535b2a18e6123a",
-          "md5": "7e365fb876ef04334ca259f01ea037bc"
+          "size": 1510609,
+          "sha512": "9aede4b6989a2477b81bc60493c4eb953b446c6aab2c427c79b4a38caf4c36417577485eaccd094a3f805f2fffbcafc48f29b0fc61f32787beb6064c989104df",
+          "sha256": "a0d3389cbc042d7c4bdb88b910af93dbce13f97e1f3e94bf054334d30390482a",
+          "sha1": "2b1e41a2d685a6c422217702264525124aab9749",
+          "md5": "76005118ce5dec9c7957449381f7e9c5"
         }
       ]
     },
