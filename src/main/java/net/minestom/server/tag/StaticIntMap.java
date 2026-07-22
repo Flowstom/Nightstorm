@@ -1,0 +1,88 @@
+package net.minestom.server.tag;
+
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Range;
+import org.jetbrains.annotations.UnknownNullability;
+
+import java.util.Arrays;
+import java.util.function.Consumer;
+
+sealed interface StaticIntMap<T extends @UnknownNullability Object> permits StaticIntMap.Array {
+
+    T get(@Range(from = 0, to = Integer.MAX_VALUE) int key);
+
+    void forValues(Consumer<T> consumer);
+
+    StaticIntMap<T> copy();
+
+    // Methods potentially causing re-hashing
+
+    void put(@Range(from = 0, to = Integer.MAX_VALUE) int key, T value);
+
+    void remove(@Range(from = 0, to = Integer.MAX_VALUE) int key);
+
+    void updateContent(StaticIntMap<T> content);
+
+    final class Array<T extends @UnknownNullability Object> implements StaticIntMap<T> {
+        private static final Object[] EMPTY_ARRAY = new Object[0];
+
+        private T[] array;
+
+        public Array(T[] array) {
+            this.array = array;
+        }
+
+        @SuppressWarnings("unchecked")
+        public Array() {
+            this.array = (T[]) EMPTY_ARRAY;
+        }
+
+        @Override
+        public @Nullable T get(int key) {
+            final T[] array = this.array;
+            return key < array.length ? array[key] : null;
+        }
+
+        @Override
+        public void forValues(Consumer<T> consumer) {
+            final T[] array = this.array;
+            for (T value : array) {
+                if (value != null) consumer.accept(value);
+            }
+        }
+
+        @Override
+        public StaticIntMap<T> copy() {
+            return new Array<>(array.clone());
+        }
+
+        @Override
+        public void put(int key, T value) {
+            T[] array = this.array;
+            if (key >= array.length) {
+                array = updateArray(Arrays.copyOf(array, key * 2 + 1));
+            }
+            array[key] = value;
+        }
+
+        @Override
+        public void updateContent(StaticIntMap<T> content) {
+            if (content instanceof StaticIntMap.Array<T> arrayMap) {
+                updateArray(arrayMap.array.clone());
+            } else {
+                throw new IllegalArgumentException("Invalid content type: " + content.getClass());
+            }
+        }
+
+        @Override
+        public void remove(int key) {
+            T[] array = this.array;
+            if (key < array.length) array[key] = null;
+        }
+
+        T[] updateArray(T[] result) {
+            this.array = result;
+            return result;
+        }
+    }
+}

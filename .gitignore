@@ -1,0 +1,53 @@
+# OS
+.DS_Store
+
+# Java
+*.class
+*.log
+*.ctxt
+hs_err_pid*
+**.hprof
+
+# Archives
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+!gradle-wrapper.jar
+
+# Gradle
+**/.gradle
+**/build/
+gradle-app.setting
+.gradletasknamecache
+
+# IDEs
+.idea/
+.vscode/
+.mtj.tmp/
+**/out/
+**/bin/
+
+# Kotlin
+.kotlin/
+
+# Coding agents
+.claude/
+.cursor/
+.aider*
+.aiderignore
+.codeium/
+.continue/
+.windsurf/
+.zed/
+.github/copilot/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+
+# JFR
+/.profileconfig.json
+

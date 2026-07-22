@@ -1,0 +1,158 @@
+package net.minestom.server.listener.preplay;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.minestom.server.Auth;
+import net.minestom.server.MinecraftServer;
+import net.minestom.server.ServerFlag;
+import net.minestom.server.network.packet.client.handshake.ClientHandshakePacket;
+import net.minestom.server.network.player.GameProfile;
+import net.minestom.server.network.player.PlayerConnection;
+import net.minestom.server.network.player.PlayerSocketConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+public final class HandshakeListener {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(HandshakeListener.class);
+
+    /**
+     * Text sent if a player tries to connect with an invalid version of the client
+     */
+    private static final Component INVALID_VERSION_TEXT = Component.text("Invalid Version, please use " + MinecraftServer.VERSION_NAME, NamedTextColor.RED);
+
+    /**
+     * Indicates that a BungeeGuard authentication was invalid due to missing, multiple, or invalid tokens.
+     */
+    private static final Component INVALID_BUNGEE_FORWARDING = Component.text("Invalid connection, please connect through the BungeeCord proxy. If you believe this is an error, contact a server administrator.", NamedTextColor.RED);
+
+    /**
+     * Text sent if a player was transferred to this server but the {@link ServerFlag#ACCEPT_TRANSFERS} server flag is not enabled.
+     */
+    private static final Component TRANSFERS_DISABLED_TEXT = Component.translatable("multiplayer.disconnect.transfers_disabled");
+
+    private static int maxHandshakeLength() {
+        // BungeeGuard limits handshake length to 2500 characters, while vanilla limits it to 255
+        return MinecraftServer.process().auth() instanceof Auth.Bungee bungee ? (bungee.guard() ? 2500 : Short.MAX_VALUE) : 255;
+    }
+
+    @SuppressWarnings("fallthrough") // transfers deliberately continue with the regular login flow
+    public static void listener(ClientHandshakePacket packet, PlayerConnection connection) {
+        String address = packet.serverAddress();
+        if (address.length() > maxHandshakeLength()) {
+            throw new IllegalArgumentException("Server address too long: " + address.length());
+        }
+
+        switch (packet.intent()) {
+            case TRANSFER:
+                connection.markTransferred(true);
+
+                if (!ServerFlag.ACCEPT_TRANSFERS) {
+                    connection.kick(TRANSFERS_DISABLED_TEXT);
+                    return;
+                }
+            case LOGIN:
+                if (packet.protocolVersion() != MinecraftServer.PROTOCOL_VERSION) {
+                    // Incorrect client version
+                    connection.kick(INVALID_VERSION_TEXT);
+                    break;
+                }
+
+                final Auth auth = MinecraftServer.process().auth();
+
+                // Bungee support (IP forwarding)
+                if (auth instanceof Auth.Bungee bungee && connection instanceof PlayerSocketConnection socketConnection) {
+                    address = handleBungeeForwarding(address, socketConnection, bungee);
+                }
+            default:
+                break;
+        }
+
+        if (connection instanceof PlayerSocketConnection socketConnection) {
+            socketConnection.refreshServerInformation(address, packet.serverPort(), packet.protocolVersion());
+        }
+    }
+
+    private static String handleBungeeForwarding(String address,
+                                                 PlayerSocketConnection socketConnection,
+                                                 Auth.Bungee bungee) {
+        final String[] split = address.split("\00", 0);
+
+        if (split.length == 3 || split.length == 4) {
+            final boolean hasProperties = split.length == 4;
+            if (bungee.guard() && !hasProperties) {
+                bungeeDisconnect(socketConnection);
+                return address;
+            }
+
+            final String forwardedAddress = split[0];
+
+            final SocketAddress socketAddress = new InetSocketAddress(split[1],
+                    ((InetSocketAddress) socketConnection.getRemoteAddress()).getPort());
+            socketConnection.setRemoteAddress(socketAddress);
+
+            final UUID playerUuid = UUID.fromString(
+                    split[2]
+                            .replaceFirst(
+                                    "(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}+)", "$1-$2-$3-$4-$5"
+                            )
+            );
+
+            List<GameProfile.Property> properties = new ArrayList<>();
+            if (hasProperties) {
+                boolean foundBungeeGuardToken = false;
+                final String rawPropertyJson = split[3];
+                final JsonArray propertyJson = JsonParser.parseString(rawPropertyJson).getAsJsonArray();
+                for (JsonElement element : propertyJson) {
+                    final JsonObject jsonObject = element.getAsJsonObject();
+                    final JsonElement name = jsonObject.get("name");
+                    final JsonElement value = jsonObject.get("value");
+                    final JsonElement signature = jsonObject.get("signature");
+                    if (name == null || value == null) continue;
+
+                    final String nameString = name.getAsString();
+                    final String valueString = value.getAsString();
+                    final String signatureString = signature == null ? null : signature.getAsString();
+
+                    if (bungee.guard() && nameString.equals("bungeeguard-token")) {
+                        if (foundBungeeGuardToken || !bungee.validToken(valueString)) {
+                            bungeeDisconnect(socketConnection);
+                            return address;
+                        }
+
+                        foundBungeeGuardToken = true;
+                    }
+
+                    properties.add(new GameProfile.Property(nameString, valueString, signatureString));
+                }
+
+                if (bungee.guard() && !foundBungeeGuardToken) {
+                    bungeeDisconnect(socketConnection);
+                    return address;
+                }
+            }
+
+            final GameProfile gameProfile = new GameProfile(playerUuid, "test", properties);
+            socketConnection.UNSAFE_setProfile(gameProfile);
+            return forwardedAddress;
+        }
+
+        bungeeDisconnect(socketConnection);
+        return address;
+    }
+
+    private static void bungeeDisconnect(PlayerConnection connection) {
+        LOGGER.warn("{} tried to log in without valid BungeeGuard forwarding information.", connection.getIdentifier());
+        connection.kick(INVALID_BUNGEE_FORWARDING);
+    }
+}

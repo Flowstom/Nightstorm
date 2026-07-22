@@ -1,0 +1,35 @@
+package net.minestom.demo.commands;
+
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.sound.Sound;
+import net.kyori.adventure.text.Component;
+import net.minestom.server.adventure.AdventurePacketConvertor;
+import net.minestom.server.command.CommandSender;
+import net.minestom.server.command.builder.Command;
+import net.minestom.server.command.builder.CommandContext;
+import net.minestom.server.command.builder.arguments.ArgumentType;
+import net.minestom.server.entity.Player;
+import net.minestom.server.sound.SoundEvent;
+
+public class TestCommand extends Command {
+
+    public TestCommand() {
+        super("testcmd");
+        setDefaultExecutor(TestCommand::usage);
+
+        var block = ArgumentType.BlockState("block");
+        block.setCallback((_, exception) -> exception.printStackTrace());
+
+        setDefaultExecutor((sender, _) -> {
+            sender.playSound(Sound.sound(Key.key("item.trumpet.doot"), Sound.Source.PLAYER, 1, 1));
+            AdventurePacketConvertor.createSoundPacket(Sound.sound(Key.key(SoundEvent.BLOCK_ANVIL_HIT.name()), Sound.Source.HOSTILE, 1, 1), (Player) sender);
+        });
+        addSyntax((_, _) -> System.out.println("executed"), block);
+
+    }
+
+    private static void usage(CommandSender sender, CommandContext context) {
+        sender.sendMessage(Component.text("Incorrect usage"));
+    }
+
+}

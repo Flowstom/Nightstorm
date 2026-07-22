@@ -1,0 +1,71 @@
+package net.minestom.server.network.packet.server.play;
+
+import java.util.List;
+import net.kyori.adventure.text.Component;
+import net.minestom.server.entity.EquipmentSlot;
+import net.minestom.server.item.ItemStack;
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.network.packet.server.ServerPacket;
+
+import java.util.*;
+import java.util.function.UnaryOperator;
+
+import static net.minestom.server.network.NetworkBuffer.BYTE;
+import static net.minestom.server.network.NetworkBuffer.VAR_INT;
+
+public record EntityEquipmentPacket(int entityId,
+                                    Map<EquipmentSlot, ItemStack> equipments) implements ServerPacket.Play, ServerPacket.ComponentHolding {
+    public EntityEquipmentPacket {
+        equipments = Map.copyOf(equipments);
+        if (equipments.isEmpty())
+            throw new IllegalArgumentException("Equipments cannot be empty");
+    }
+
+    @SuppressWarnings("deprecation") // legacy protocol ids are the wire format
+    public static final NetworkBuffer.Type<EntityEquipmentPacket> SERIALIZER = new NetworkBuffer.Type<>() {
+        @Override
+        public void write(NetworkBuffer buffer, EntityEquipmentPacket value) {
+            buffer.write(VAR_INT, value.entityId);
+            int index = 0;
+            for (var entry : value.equipments.entrySet()) {
+                final boolean last = index++ == value.equipments.size() - 1;
+                byte slotEnum = (byte) entry.getKey().legacyProtocolId();
+                if (!last) slotEnum = (byte) (slotEnum | 0x80);
+                buffer.write(BYTE, slotEnum);
+                buffer.write(ItemStack.NETWORK_TYPE, entry.getValue());
+            }
+        }
+
+        @Override
+        public EntityEquipmentPacket read(NetworkBuffer buffer) {
+            return new EntityEquipmentPacket(buffer.read(VAR_INT), readEquipments(buffer));
+        }
+    };
+
+    @Override
+    public List<Component> components() {
+        final var components = new ArrayList<Component>();
+        for (var itemStack : this.equipments.values())
+            components.addAll(ItemStack.textComponents(itemStack));
+        return List.copyOf(components);
+    }
+
+    @Override
+    public ServerPacket copyWithOperator(UnaryOperator<Component> operator) {
+        final var newEquipment = new EnumMap<EquipmentSlot, ItemStack>(EquipmentSlot.class);
+        for (var entry : this.equipments.entrySet())
+            newEquipment.put(entry.getKey(), ItemStack.copyWithOperator(entry.getValue(), operator));
+        return new EntityEquipmentPacket(this.entityId, newEquipment);
+    }
+
+    @SuppressWarnings("deprecation") // legacy protocol ids are the wire format
+    private static Map<EquipmentSlot, ItemStack> readEquipments(NetworkBuffer reader) {
+        Map<EquipmentSlot, ItemStack> equipments = new EnumMap<>(EquipmentSlot.class);
+        byte slot;
+        do {
+            slot = reader.read(BYTE);
+            equipments.put(EquipmentSlot.fromLegacyProtocolId(slot & 0x7F), reader.read(ItemStack.NETWORK_TYPE));
+        } while ((slot & 0x80) == 0x80);
+        return equipments;
+    }
+}

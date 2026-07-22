@@ -1,0 +1,12 @@
+package net.minestom.server.network.packet.client.common;
+
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.network.NetworkBufferTemplate;
+import net.minestom.server.network.packet.client.ClientPacket;
+import net.minestom.server.network.player.ClientSettings;
+
+public record ClientSettingsPacket(ClientSettings settings) implements ClientPacket.Configuration, ClientPacket.Play {
+    public static final NetworkBuffer.Type<ClientSettingsPacket> SERIALIZER = NetworkBufferTemplate.template(
+            ClientSettings.NETWORK_TYPE, ClientSettingsPacket::settings,
+            ClientSettingsPacket::new);
+}

@@ -1,0 +1,92 @@
+package net.minestom.server.entity.metadata.villager;
+
+import net.minestom.server.component.DataComponent;
+import net.minestom.server.component.DataComponents;
+import net.minestom.server.entity.*;
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.network.NetworkBufferTemplate;
+import org.jetbrains.annotations.Nullable;
+
+public class VillagerMeta extends AbstractVillagerMeta {
+    public VillagerMeta(@Nullable Entity entity, MetadataHolder metadata) {
+        super(entity, metadata);
+    }
+
+    public VillagerData getVillagerData() {
+        return metadata.get(MetadataDef.Villager.VARIANT);
+    }
+
+    public void setVillagerData(VillagerData data) {
+        metadata.set(MetadataDef.Villager.VARIANT, data);
+    }
+
+    public boolean isFinalized() {
+        return metadata.get(MetadataDef.Villager.IS_FINALIZED);
+    }
+
+    public void setFinalized(boolean value) {
+        metadata.set(MetadataDef.Villager.IS_FINALIZED, value);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    protected <T> @Nullable T get(DataComponent<T> component) {
+        if (component == DataComponents.VILLAGER_VARIANT)
+            return (T) getVillagerData().type();
+        return super.get(component);
+    }
+
+    @Override
+    protected <T> void set(DataComponent<T> component, T value) {
+        if (component == DataComponents.VILLAGER_VARIANT)
+            setVillagerData(getVillagerData().withType((VillagerType) value));
+        else super.set(component, value);
+    }
+
+    public record VillagerData(
+            VillagerType type,
+            VillagerProfession profession,
+            Level level
+    ) {
+        public static final VillagerData DEFAULT = new VillagerData(VillagerType.DESERT, VillagerProfession.NONE, Level.NOVICE);
+
+        public static final NetworkBuffer.Type<VillagerData> NETWORK_TYPE = NetworkBufferTemplate.template(
+                VillagerType.NETWORK_TYPE, VillagerData::type,
+                VillagerProfession.NETWORK_TYPE, VillagerData::profession,
+                Level.NETWORK_TYPE, VillagerData::level,
+                VillagerData::new);
+
+        public VillagerData withType(VillagerType type) {
+            return new VillagerData(type, this.profession, this.level);
+        }
+
+        public VillagerData withProfession(VillagerProfession profession) {
+            return new VillagerData(this.type, profession, this.level);
+        }
+
+        public VillagerData withLevel(Level level) {
+            return new VillagerData(this.type, this.profession, level);
+        }
+    }
+
+    public enum Level {
+        NOVICE,
+        APPRENTICE,
+        JOURNEYMAN,
+        EXPERT,
+        MASTER;
+
+        private static final Level[] VALUES = values();
+
+        private int toProtocolId() {
+            return this.ordinal() + 1;  // Villager levels are 1-indexed
+        }
+
+        private static Level fromProtocolId(int value) {
+            return VALUES[value - 1];
+        }
+
+        public static final NetworkBuffer.Type<Level> NETWORK_TYPE = NetworkBuffer.VAR_INT.transform(Level::fromProtocolId, Level::toProtocolId);
+    }
+
+}

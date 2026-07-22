@@ -1,0 +1,74 @@
+package net.minestom.server.instance;
+
+import net.minestom.server.ServerFlag;
+import net.minestom.server.coordinate.ChunkRange;
+import net.minestom.server.coordinate.Pos;
+import net.minestom.server.network.packet.server.play.ChunkDataPacket;
+import net.minestom.testing.Env;
+import net.minestom.testing.EnvTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+@EnvTest
+public class ChunkViewerIntegrationTest {
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void basicJoin(boolean sharedInstance, Env env) {
+        Instance instance = env.createFlatInstance();
+        if (sharedInstance) {
+            // Chunks get their viewers from the instance
+            // Ensuring that the system works with shared instances is therefore important
+            var manager = env.process().instance();
+            instance = manager.createSharedInstance((InstanceContainer) instance);
+        }
+
+        var chunk = instance.loadChunk(0, 0).join();
+        assertEquals(0, chunk.getViewers().size());
+
+        var player = env.createPlayer(instance, new Pos(0, 40, 0));
+        assertEquals(1, chunk.getViewers().size(), sharedInstance ?
+                "Chunk viewer set must include players from shared instance" : "Instance should have 1 viewer");
+        assertEquals(player, chunk.getViewers().iterator().next());
+    }
+
+    // Regression test: a chunk can get cached between a caller's cache miss and its
+    // loading registration, retrieveChunk must then return the cached chunk instead
+    // of loading a duplicate that viewers would no longer be registered on
+    @Test
+    public void retrieveAlreadyCachedChunk(Env env) {
+        InstanceContainer instance = (InstanceContainer) env.createFlatInstance();
+        Chunk chunk = instance.loadChunk(0, 0).join();
+        Chunk retrieved = instance.retrieveChunk(0, 0).join();
+        assertSame(chunk, retrieved);
+    }
+
+    @Test
+    public void renderDistance(Env env) {
+        final int viewRadius = ServerFlag.CHUNK_VIEW_DISTANCE;
+        var instance = env.createFlatInstance();
+        var connection = env.createConnection();
+        // Check initial load
+        {
+            var tracker = connection.trackIncoming(ChunkDataPacket.class);
+            var player = connection.connect(instance, new Pos(0, 40, 0));
+            assertEquals(instance, player.getInstance());
+            assertEquals(new Pos(0, 40, 0), player.getPosition());
+            assertEquals(ChunkRange.chunksCount(player.effectiveViewDistance()), tracker.collect().size());
+        }
+        // Check chunk#sendChunk
+        {
+            var tracker = connection.trackIncoming(ChunkDataPacket.class);
+            for (int x = -viewRadius; x <= viewRadius; x++) {
+                for (int z = -viewRadius; z <= viewRadius; z++) {
+                    instance.getChunk(x, z).sendChunk();
+                }
+            }
+            assertEquals(ChunkRange.chunksCount(viewRadius), tracker.collect().size());
+        }
+    }
+}

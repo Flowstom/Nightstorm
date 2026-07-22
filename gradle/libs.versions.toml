@@ -1,0 +1,93 @@
+metadata.format.version = "1.1"
+
+[versions]
+
+# Important dependencies
+data = "26.2-rv3"
+adventure = "5.2.0"
+jetbrainsAnnotations = "26.1.0"
+slf4j = "2.0.18"
+
+# Performance / Data Structures
+fastutil = "8.5.18"
+flare = "2.0.1"
+gson = "2.14.0"
+jcTools = "4.0.6"
+
+# Quality
+junit = "6.1.2"
+jmh = "1.37"
+jcstress = "0.16"
+errorprone = "2.50.0"
+
+# Code Generation
+javaPoet = "0.17.0"
+
+# Log impl (for demo)
+logback = "1.5.38"
+
+# Gradle plugins
+blossom = "2.2.0"
+nmcp = "1.6.1"
+graaltools = "1.1.5"
+jmh-plugin = "0.7.3"
+jcstress-plugin = "0.9.0"
+errorprone-plugin = "5.1.0"
+
+[libraries]
+
+# Important Dependencies
+# Adventure
+adventure-api = { group = "net.kyori", name = "adventure-api", version.ref = "adventure" }
+adventure-nbt = { group = "net.kyori", name = "adventure-nbt", version.ref = "adventure" }
+adventure-serializer-gson = { group = "net.kyori", name = "adventure-text-serializer-gson", version.ref = "adventure" }
+adventure-serializer-legacy = { group = "net.kyori", name = "adventure-text-serializer-legacy", version.ref = "adventure" }
+adventure-serializer-plain = { group = "net.kyori", name = "adventure-text-serializer-plain", version.ref = "adventure" }
+adventure-serializer-ansi = { group = "net.kyori", name = "adventure-text-serializer-ansi", version.ref = "adventure" }
+adventure-text-logger-slf4j = { group = "net.kyori", name = "adventure-text-logger-slf4j", version.ref = "adventure" }
+
+# Miscellaneous
+minestomData = { group = "net.minestom", name = "data", version.ref = "data" }
+jetbrainsAnnotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrainsAnnotations" }
+slf4j = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+
+# Performance / Data Structures
+fastutil = { group = "it.unimi.dsi", name = "fastutil", version.ref = "fastutil" }
+flare = { group = "space.vectrix.flare", name = "flare", version.ref = "flare" }
+flare-fastutil = { group = "space.vectrix.flare", name = "flare-fastutil", version.ref = "flare" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+jcTools = { group = "org.jctools", name = "jctools-core-jdk11", version.ref = "jcTools" }
+
+# Code quality
+junit-api = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junit" }
+junit-engine = { group = "org.junit.jupiter", name = "junit-jupiter-engine", version.ref = "junit" }
+junit-params = { group = "org.junit.jupiter", name = "junit-jupiter-params", version.ref = "junit" }
+junit-suite-api = { group = "org.junit.platform", name = "junit-platform-suite-api", version.ref = "junit" }
+junit-suite-engine = { group = "org.junit.platform", name = "junit-platform-suite-engine", version.ref = "junit" }
+jmh-core = { group = "org.openjdk.jmh", name = "jmh-core", version.ref = "jmh" }
+jmh-annotationprocessor = { group = "org.openjdk.jmh", name = "jmh-generator-annprocess", version.ref = "jmh" }
+jcstress-core = { group = "org.openjdk.jcstress", name = "jcstress-core", version.ref = "jcstress" }
+errorprone-core = { group = "com.google.errorprone", name = "error_prone_core", version.ref = "errorprone" }
+
+# Code Generation
+javaPoet = { group = "com.palantir.javapoet", name = "javapoet", version.ref = "javaPoet" }
+
+# Log impl (for demo)
+logback-core = { group = "ch.qos.logback", name = "logback-core", version.ref = "logback" }
+logback-classic = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
+
+[bundles]
+
+flare = ["flare", "flare-fastutil"]
+adventure = ["adventure-api", "adventure-nbt", "adventure-serializer-gson", "adventure-serializer-legacy", "adventure-serializer-plain", "adventure-serializer-ansi", "adventure-text-logger-slf4j"]
+junit = ["junit-api", "junit-engine", "junit-params", "junit-suite-api", "junit-suite-engine"]
+logback = ["logback-core", "logback-classic"]
+
+[plugins]
+blossom = { id = "net.kyori.blossom", version.ref = "blossom" }
+jmh-plugin = { id = "me.champeau.jmh", version.ref = "jmh-plugin" }
+jcstress-plugin = { id = "io.github.reyerizo.gradle.jcstress", version.ref = "jcstress-plugin" }
+errorprone-plugin = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
+nmcp = { id = "com.gradleup.nmcp", version.ref = "nmcp" }
+nmcp-aggregation = { id = "com.gradleup.nmcp.aggregation", version.ref = "nmcp" }
+graalvm-native = { id = "org.graalvm.buildtools.native", version.ref = "graaltools" }

@@ -1,0 +1,77 @@
+package net.minestom.server.listener;
+
+import net.minestom.server.ServerFlag;
+import net.minestom.server.collision.BoundingBox;
+import net.minestom.server.coordinate.Pos;
+import net.minestom.server.entity.Entity;
+import net.minestom.server.entity.LivingEntity;
+import net.minestom.server.entity.Player;
+import net.minestom.server.entity.PlayerHand;
+import net.minestom.server.entity.attribute.Attribute;
+import net.minestom.server.event.EventDispatcher;
+import net.minestom.server.event.entity.EntityAttackEvent;
+import net.minestom.server.event.player.PlayerEntityInteractEvent;
+import net.minestom.server.network.packet.client.play.ClientAttackPacket;
+import net.minestom.server.network.packet.client.play.ClientInteractEntityPacket;
+
+public class UseEntityListener {
+
+    public static void useEntityListener(ClientInteractEntityPacket packet, Player player) {
+        final Entity entity = player.getInstance().getEntityById(packet.targetId());
+        if (entity == null || invalidUse(player, entity))
+            return;
+        EventDispatcher.call(new PlayerEntityInteractEvent(player, entity, packet.hand(), packet.location()));
+    }
+
+    public static void attackEntityListener(ClientAttackPacket packet, Player player) {
+        final Entity entity = player.getInstance().getEntityById(packet.targetId());
+        if (entity == null || invalidUse(player, entity))
+            return;
+        if (entity instanceof LivingEntity livingEntity && livingEntity.isDead()) // Can't attack dead entities
+            return;
+        EventDispatcher.call(new EntityAttackEvent(player, entity));
+    }
+
+    static boolean invalidUse(Player player, Entity entity) {
+        if (!entity.isViewer(player))
+            return true;
+
+        if (ServerFlag.ENFORCE_INTERACTION_LIMIT) {
+            final double maxDistanceSquared = Math.pow(player.getAttributeValue(Attribute.ENTITY_INTERACTION_RANGE) + 1, 2);
+
+            final double distSquared = getDistSquared(player, entity);
+
+            return distSquared >= maxDistanceSquared;
+        }
+        return false;
+    }
+
+    private static double getDistSquared(Player player, Entity entity) {
+        final Pos playerPos = player.getPosition();
+        final double eyeHeight = player.getEyeHeight();
+        final double px = playerPos.x();
+        final double py = playerPos.y() + eyeHeight;
+        final double pz = playerPos.z();
+
+        final BoundingBox box = entity.getBoundingBox();
+        final double halfWidth = box.width() / 2;
+        final double height = box.height();
+        final Pos entityPos = entity.getPosition();
+
+        final double minX = entityPos.x() - halfWidth;
+        final double maxX = entityPos.x() + halfWidth;
+        final double minY = entityPos.y();
+        final double maxY = entityPos.y() + height;
+        final double minZ = entityPos.z() - halfWidth;
+        final double maxZ = entityPos.z() + halfWidth;
+
+        final double clampX = Math.clamp(px, minX, maxX);
+        final double clampY = Math.clamp(py, minY, maxY);
+        final double clampZ = Math.clamp(pz, minZ, maxZ);
+
+        final double dx = px - clampX;
+        final double dy = py - clampY;
+        final double dz = pz - clampZ;
+        return dx * dx + dy * dy + dz * dz;
+    }
+}

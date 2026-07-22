@@ -1,0 +1,27 @@
+package net.minestom.server.network.packet.client.play;
+
+import net.minestom.server.coordinate.Point;
+import net.minestom.server.entity.PlayerHand;
+import net.minestom.server.instance.block.BlockFace;
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.network.NetworkBufferTemplate;
+import net.minestom.server.network.packet.client.ClientPacket;
+
+import static net.minestom.server.network.NetworkBuffer.*;
+
+public record ClientPlayerBlockPlacementPacket(
+        PlayerHand hand, Point blockPosition, BlockFace blockFace,
+        float cursorPositionX, float cursorPositionY, float cursorPositionZ,
+        boolean insideBlock, boolean hitWorldBorder, int sequence) implements ClientPacket.Play {
+    public static final NetworkBuffer.Type<ClientPlayerBlockPlacementPacket> SERIALIZER = NetworkBufferTemplate.template(
+            Enum(PlayerHand.class), ClientPlayerBlockPlacementPacket::hand,
+            BLOCK_POSITION, ClientPlayerBlockPlacementPacket::blockPosition,
+            Enum(BlockFace.class), ClientPlayerBlockPlacementPacket::blockFace,
+            FLOAT, ClientPlayerBlockPlacementPacket::cursorPositionX,
+            FLOAT, ClientPlayerBlockPlacementPacket::cursorPositionY,
+            FLOAT, ClientPlayerBlockPlacementPacket::cursorPositionZ,
+            BOOLEAN, ClientPlayerBlockPlacementPacket::insideBlock,
+            BOOLEAN, ClientPlayerBlockPlacementPacket::hitWorldBorder,
+            VAR_INT, ClientPlayerBlockPlacementPacket::sequence,
+            ClientPlayerBlockPlacementPacket::new);
+}
