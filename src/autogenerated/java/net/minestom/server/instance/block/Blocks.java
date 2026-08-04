@@ -1575,6 +1575,70 @@ sealed interface Blocks permits Block {
 
     Block BLACK_CONCRETE = BlockImpl.get(BlockKeys.BLACK_CONCRETE);
 
+    Block WHITE_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.WHITE_CONCRETE_STAIRS);
+
+    Block ORANGE_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.ORANGE_CONCRETE_STAIRS);
+
+    Block MAGENTA_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.MAGENTA_CONCRETE_STAIRS);
+
+    Block LIGHT_BLUE_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.LIGHT_BLUE_CONCRETE_STAIRS);
+
+    Block YELLOW_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.YELLOW_CONCRETE_STAIRS);
+
+    Block LIME_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.LIME_CONCRETE_STAIRS);
+
+    Block PINK_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.PINK_CONCRETE_STAIRS);
+
+    Block GRAY_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.GRAY_CONCRETE_STAIRS);
+
+    Block LIGHT_GRAY_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.LIGHT_GRAY_CONCRETE_STAIRS);
+
+    Block CYAN_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.CYAN_CONCRETE_STAIRS);
+
+    Block PURPLE_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.PURPLE_CONCRETE_STAIRS);
+
+    Block BLUE_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.BLUE_CONCRETE_STAIRS);
+
+    Block BROWN_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.BROWN_CONCRETE_STAIRS);
+
+    Block GREEN_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.GREEN_CONCRETE_STAIRS);
+
+    Block RED_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.RED_CONCRETE_STAIRS);
+
+    Block BLACK_CONCRETE_STAIRS = BlockImpl.get(BlockKeys.BLACK_CONCRETE_STAIRS);
+
+    Block WHITE_CONCRETE_SLAB = BlockImpl.get(BlockKeys.WHITE_CONCRETE_SLAB);
+
+    Block ORANGE_CONCRETE_SLAB = BlockImpl.get(BlockKeys.ORANGE_CONCRETE_SLAB);
+
+    Block MAGENTA_CONCRETE_SLAB = BlockImpl.get(BlockKeys.MAGENTA_CONCRETE_SLAB);
+
+    Block LIGHT_BLUE_CONCRETE_SLAB = BlockImpl.get(BlockKeys.LIGHT_BLUE_CONCRETE_SLAB);
+
+    Block YELLOW_CONCRETE_SLAB = BlockImpl.get(BlockKeys.YELLOW_CONCRETE_SLAB);
+
+    Block LIME_CONCRETE_SLAB = BlockImpl.get(BlockKeys.LIME_CONCRETE_SLAB);
+
+    Block PINK_CONCRETE_SLAB = BlockImpl.get(BlockKeys.PINK_CONCRETE_SLAB);
+
+    Block GRAY_CONCRETE_SLAB = BlockImpl.get(BlockKeys.GRAY_CONCRETE_SLAB);
+
+    Block LIGHT_GRAY_CONCRETE_SLAB = BlockImpl.get(BlockKeys.LIGHT_GRAY_CONCRETE_SLAB);
+
+    Block CYAN_CONCRETE_SLAB = BlockImpl.get(BlockKeys.CYAN_CONCRETE_SLAB);
+
+    Block PURPLE_CONCRETE_SLAB = BlockImpl.get(BlockKeys.PURPLE_CONCRETE_SLAB);
+
+    Block BLUE_CONCRETE_SLAB = BlockImpl.get(BlockKeys.BLUE_CONCRETE_SLAB);
+
+    Block BROWN_CONCRETE_SLAB = BlockImpl.get(BlockKeys.BROWN_CONCRETE_SLAB);
+
+    Block GREEN_CONCRETE_SLAB = BlockImpl.get(BlockKeys.GREEN_CONCRETE_SLAB);
+
+    Block RED_CONCRETE_SLAB = BlockImpl.get(BlockKeys.RED_CONCRETE_SLAB);
+
+    Block BLACK_CONCRETE_SLAB = BlockImpl.get(BlockKeys.BLACK_CONCRETE_SLAB);
+
     Block WHITE_CONCRETE_POWDER = BlockImpl.get(BlockKeys.WHITE_CONCRETE_POWDER);
 
     Block ORANGE_CONCRETE_POWDER = BlockImpl.get(BlockKeys.ORANGE_CONCRETE_POWDER);

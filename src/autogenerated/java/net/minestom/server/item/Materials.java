@@ -1417,6 +1417,70 @@ sealed interface Materials permits Material {
 
     Material BLACK_CONCRETE = MaterialImpl.get(MaterialKeys.BLACK_CONCRETE);
 
+    Material WHITE_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.WHITE_CONCRETE_STAIRS);
+
+    Material ORANGE_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.ORANGE_CONCRETE_STAIRS);
+
+    Material MAGENTA_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.MAGENTA_CONCRETE_STAIRS);
+
+    Material LIGHT_BLUE_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.LIGHT_BLUE_CONCRETE_STAIRS);
+
+    Material YELLOW_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.YELLOW_CONCRETE_STAIRS);
+
+    Material LIME_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.LIME_CONCRETE_STAIRS);
+
+    Material PINK_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.PINK_CONCRETE_STAIRS);
+
+    Material GRAY_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.GRAY_CONCRETE_STAIRS);
+
+    Material LIGHT_GRAY_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.LIGHT_GRAY_CONCRETE_STAIRS);
+
+    Material CYAN_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.CYAN_CONCRETE_STAIRS);
+
+    Material PURPLE_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.PURPLE_CONCRETE_STAIRS);
+
+    Material BLUE_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.BLUE_CONCRETE_STAIRS);
+
+    Material BROWN_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.BROWN_CONCRETE_STAIRS);
+
+    Material GREEN_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.GREEN_CONCRETE_STAIRS);
+
+    Material RED_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.RED_CONCRETE_STAIRS);
+
+    Material BLACK_CONCRETE_STAIRS = MaterialImpl.get(MaterialKeys.BLACK_CONCRETE_STAIRS);
+
+    Material WHITE_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.WHITE_CONCRETE_SLAB);
+
+    Material ORANGE_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.ORANGE_CONCRETE_SLAB);
+
+    Material MAGENTA_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.MAGENTA_CONCRETE_SLAB);
+
+    Material LIGHT_BLUE_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.LIGHT_BLUE_CONCRETE_SLAB);
+
+    Material YELLOW_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.YELLOW_CONCRETE_SLAB);
+
+    Material LIME_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.LIME_CONCRETE_SLAB);
+
+    Material PINK_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.PINK_CONCRETE_SLAB);
+
+    Material GRAY_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.GRAY_CONCRETE_SLAB);
+
+    Material LIGHT_GRAY_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.LIGHT_GRAY_CONCRETE_SLAB);
+
+    Material CYAN_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.CYAN_CONCRETE_SLAB);
+
+    Material PURPLE_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.PURPLE_CONCRETE_SLAB);
+
+    Material BLUE_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.BLUE_CONCRETE_SLAB);
+
+    Material BROWN_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.BROWN_CONCRETE_SLAB);
+
+    Material GREEN_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.GREEN_CONCRETE_SLAB);
+
+    Material RED_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.RED_CONCRETE_SLAB);
+
+    Material BLACK_CONCRETE_SLAB = MaterialImpl.get(MaterialKeys.BLACK_CONCRETE_SLAB);
+
     Material WHITE_CONCRETE_POWDER = MaterialImpl.get(MaterialKeys.WHITE_CONCRETE_POWDER);
 
     Material ORANGE_CONCRETE_POWDER = MaterialImpl.get(MaterialKeys.ORANGE_CONCRETE_POWDER);
@@ -2420,6 +2484,38 @@ sealed interface Materials permits Material {
     Material CRAFTER = MaterialImpl.get(MaterialKeys.CRAFTER);
 
     Material FILLED_MAP = MaterialImpl.get(MaterialKeys.FILLED_MAP);
+
+    Material OCEAN_EXPLORER_MAP = MaterialImpl.get(MaterialKeys.OCEAN_EXPLORER_MAP);
+
+    Material WOODLAND_EXPLORER_MAP = MaterialImpl.get(MaterialKeys.WOODLAND_EXPLORER_MAP);
+
+    Material TRIAL_EXPLORER_MAP = MaterialImpl.get(MaterialKeys.TRIAL_EXPLORER_MAP);
+
+    Material JUNGLE_EXPLORER_MAP = MaterialImpl.get(MaterialKeys.JUNGLE_EXPLORER_MAP);
+
+    Material SWAMP_EXPLORER_MAP = MaterialImpl.get(MaterialKeys.SWAMP_EXPLORER_MAP);
+
+    Material DESERT_VILLAGE_MAP = MaterialImpl.get(MaterialKeys.DESERT_VILLAGE_MAP);
+
+    Material PLAINS_VILLAGE_MAP = MaterialImpl.get(MaterialKeys.PLAINS_VILLAGE_MAP);
+
+    Material SAVANNA_VILLAGE_MAP = MaterialImpl.get(MaterialKeys.SAVANNA_VILLAGE_MAP);
+
+    Material SNOWY_VILLAGE_MAP = MaterialImpl.get(MaterialKeys.SNOWY_VILLAGE_MAP);
+
+    Material TAIGA_VILLAGE_MAP = MaterialImpl.get(MaterialKeys.TAIGA_VILLAGE_MAP);
+
+    Material BURIED_TREASURE_MAP = MaterialImpl.get(MaterialKeys.BURIED_TREASURE_MAP);
+
+    Material ANCIENT_CITY_MAP = MaterialImpl.get(MaterialKeys.ANCIENT_CITY_MAP);
+
+    Material MINESHAFT_MAP = MaterialImpl.get(MaterialKeys.MINESHAFT_MAP);
+
+    Material DESERT_PYRAMID_MAP = MaterialImpl.get(MaterialKeys.DESERT_PYRAMID_MAP);
+
+    Material ABANDONED_CAMPSITE_MAP = MaterialImpl.get(MaterialKeys.ABANDONED_CAMPSITE_MAP);
+
+    Material WARM_OCEAN_RUINS_MAP = MaterialImpl.get(MaterialKeys.WARM_OCEAN_RUINS_MAP);
 
     Material SHEARS = MaterialImpl.get(MaterialKeys.SHEARS);
 

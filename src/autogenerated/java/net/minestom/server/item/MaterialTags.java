@@ -71,6 +71,8 @@ public interface MaterialTags {
 
     TagKey<Material> CHICKEN_FOOD = TagKey.unsafeOf("chicken_food");
 
+    TagKey<Material> CLONABLE_MAPS = TagKey.unsafeOf("clonable_maps");
+
     TagKey<Material> CLUSTER_MAX_HARVESTABLES = TagKey.unsafeOf("cluster_max_harvestables");
 
     TagKey<Material> COAL_ORES = TagKey.unsafeOf("coal_ores");
@@ -84,6 +86,10 @@ public interface MaterialTags {
     TagKey<Material> CONCRETE = TagKey.unsafeOf("concrete");
 
     TagKey<Material> CONCRETE_POWDERS = TagKey.unsafeOf("concrete_powders");
+
+    TagKey<Material> CONCRETE_SLABS = TagKey.unsafeOf("concrete_slabs");
+
+    TagKey<Material> CONCRETE_STAIRS = TagKey.unsafeOf("concrete_stairs");
 
     TagKey<Material> COPPER = TagKey.unsafeOf("copper");
 
@@ -174,6 +180,8 @@ public interface MaterialTags {
     TagKey<Material> ENCHANTABLE_VANISHING = TagKey.unsafeOf("enchantable/vanishing");
 
     TagKey<Material> ENCHANTABLE_WEAPON = TagKey.unsafeOf("enchantable/weapon");
+
+    TagKey<Material> EXTENDABLE_MAPS = TagKey.unsafeOf("extendable_maps");
 
     TagKey<Material> FENCE_GATES = TagKey.unsafeOf("fence_gates");
 

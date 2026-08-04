@@ -1,5 +1,5 @@
 {
-  "generatedAt" : "2026-07-28T14:35:45.187827959Z",
+  "generatedAt" : "2026-08-04T14:40:05.356666382Z",
   "packets" : [ {
     "state" : "configuration",
     "direction" : "clientbound",
@@ -1075,139 +1075,146 @@
     "state" : "play",
     "direction" : "clientbound",
     "id" : 122,
+    "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_SWING_ANIMATION",
+    "codecOwner" : "net.minecraft.network.protocol.game.ClientboundSwingAnimationPacket",
+    "handling" : "existing-or-opaque"
+  }, {
+    "state" : "play",
+    "direction" : "clientbound",
+    "id" : 123,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_SYSTEM_CHAT",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundSystemChatPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 123,
+    "id" : 124,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TAB_LIST",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTabListPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 124,
+    "id" : 125,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TAG_QUERY",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTagQueryPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 125,
+    "id" : 126,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TAKE_ITEM_ENTITY",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 126,
+    "id" : 127,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TELEPORT_ENTITY",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 127,
+    "id" : 128,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TEST_INSTANCE_BLOCK_STATUS",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTestInstanceBlockStatus",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 128,
+    "id" : 129,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TICKING_STATE",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTickingStatePacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 129,
+    "id" : 130,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_TICKING_STEP",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTickingStepPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 130,
+    "id" : 131,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#CLIENTBOUND_TRANSFER",
     "codecOwner" : "net.minecraft.network.protocol.common.ClientboundTransferPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 131,
+    "id" : 132,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_UPDATE_ADVANCEMENTS",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 132,
+    "id" : 133,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_UPDATE_ATTRIBUTES",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 133,
+    "id" : 134,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_UPDATE_MOB_EFFECT",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 134,
+    "id" : 135,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_UPDATE_RECIPES",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 135,
+    "id" : 136,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#CLIENTBOUND_UPDATE_TAGS",
     "codecOwner" : "net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 136,
+    "id" : 137,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_PROJECTILE_POWER",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundProjectilePowerPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 137,
+    "id" : 138,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#CLIENTBOUND_CUSTOM_REPORT_DETAILS",
     "codecOwner" : "net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 138,
+    "id" : 139,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#CLIENTBOUND_SERVER_LINKS",
     "codecOwner" : "net.minecraft.network.protocol.common.ClientboundServerLinksPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 139,
+    "id" : 140,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#CLIENTBOUND_WAYPOINT",
     "codecOwner" : "net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 140,
+    "id" : 141,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#CLIENTBOUND_CLEAR_DIALOG",
     "codecOwner" : "net.minecraft.network.protocol.common.ClientboundClearDialogPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "clientbound",
-    "id" : 141,
+    "id" : 142,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#CLIENTBOUND_SHOW_DIALOG",
     "codecOwner" : "net.minecraft.network.protocol.common.ClientboundShowDialogPacket",
     "handling" : "existing-or-opaque"
@@ -1537,127 +1544,127 @@
     "state" : "play",
     "direction" : "serverbound",
     "id" : 46,
+    "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_PUNCH",
+    "codecOwner" : "net.minecraft.network.protocol.game.ServerboundPunchPacket",
+    "handling" : "existing-or-opaque"
+  }, {
+    "state" : "play",
+    "direction" : "serverbound",
+    "id" : 47,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_RECIPE_BOOK_CHANGE_SETTINGS",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundRecipeBookChangeSettingsPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 47,
+    "id" : 48,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_RECIPE_BOOK_SEEN_RECIPE",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundRecipeBookSeenRecipePacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 48,
+    "id" : 49,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_RENAME_ITEM",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundRenameItemPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 49,
+    "id" : 50,
     "vanillaType" : "net.minecraft.network.protocol.common.CommonPacketTypes#SERVERBOUND_RESOURCE_PACK",
     "codecOwner" : "net.minecraft.network.protocol.common.ServerboundResourcePackPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 50,
+    "id" : 51,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SEEN_ADVANCEMENTS",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSeenAdvancementsPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 51,
+    "id" : 52,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SELECT_TRADE",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSelectTradePacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 52,
+    "id" : 53,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_BEACON",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetBeaconPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 53,
+    "id" : 54,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_CARRIED_ITEM",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 54,
+    "id" : 55,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_COMMAND_BLOCK",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetCommandBlockPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 55,
+    "id" : 56,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_COMMAND_MINECART",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetCommandMinecartPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 56,
+    "id" : 57,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_CREATIVE_MODE_SLOT",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 57,
+    "id" : 58,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_GAME_RULE",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetGameRulePacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 58,
+    "id" : 59,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_JIGSAW_BLOCK",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetJigsawBlockPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 59,
+    "id" : 60,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_STRUCTURE_BLOCK",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetStructureBlockPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 60,
+    "id" : 61,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SET_TEST_BLOCK",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSetTestBlockPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 61,
+    "id" : 62,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SIGN_UPDATE",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSignUpdatePacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",
     "direction" : "serverbound",
-    "id" : 62,
+    "id" : 63,
     "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SPECTATOR_ACTION",
     "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSpectatorActionPacket",
-    "handling" : "existing-or-opaque"
-  }, {
-    "state" : "play",
-    "direction" : "serverbound",
-    "id" : 63,
-    "vanillaType" : "net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_SWING",
-    "codecOwner" : "net.minecraft.network.protocol.game.ServerboundSwingPacket",
     "handling" : "existing-or-opaque"
   }, {
     "state" : "play",

@@ -129,6 +129,8 @@ public enum ArgumentParserType implements StaticProtocolObject<ArgumentParserTyp
 
     FEATURE("feature"),
 
+    SWING_ANIMATION("swing_animation"),
+
     UUID("uuid");
 
     private static final Map<Key, ArgumentParserType> BY_KEY = Arrays.stream(values()).collect(Collectors.toUnmodifiableMap(ArgumentParserType::key, Function.identity()));

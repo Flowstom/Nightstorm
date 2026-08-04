@@ -191,6 +191,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> BLACK_CONCRETE_POWDER = RegistryKey.unsafeOf("black_concrete_powder");
 
+    RegistryKey<Block> BLACK_CONCRETE_SLAB = RegistryKey.unsafeOf("black_concrete_slab");
+
+    RegistryKey<Block> BLACK_CONCRETE_STAIRS = RegistryKey.unsafeOf("black_concrete_stairs");
+
     RegistryKey<Block> BLACK_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("black_glazed_terracotta");
 
     RegistryKey<Block> BLACK_SHULKER_BOX = RegistryKey.unsafeOf("black_shulker_box");
@@ -232,6 +236,10 @@ public interface BlockKeys {
     RegistryKey<Block> BLUE_CONCRETE = RegistryKey.unsafeOf("blue_concrete");
 
     RegistryKey<Block> BLUE_CONCRETE_POWDER = RegistryKey.unsafeOf("blue_concrete_powder");
+
+    RegistryKey<Block> BLUE_CONCRETE_SLAB = RegistryKey.unsafeOf("blue_concrete_slab");
+
+    RegistryKey<Block> BLUE_CONCRETE_STAIRS = RegistryKey.unsafeOf("blue_concrete_stairs");
 
     RegistryKey<Block> BLUE_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("blue_glazed_terracotta");
 
@@ -290,6 +298,10 @@ public interface BlockKeys {
     RegistryKey<Block> BROWN_CONCRETE = RegistryKey.unsafeOf("brown_concrete");
 
     RegistryKey<Block> BROWN_CONCRETE_POWDER = RegistryKey.unsafeOf("brown_concrete_powder");
+
+    RegistryKey<Block> BROWN_CONCRETE_SLAB = RegistryKey.unsafeOf("brown_concrete_slab");
+
+    RegistryKey<Block> BROWN_CONCRETE_STAIRS = RegistryKey.unsafeOf("brown_concrete_stairs");
 
     RegistryKey<Block> BROWN_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("brown_glazed_terracotta");
 
@@ -601,6 +613,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> CYAN_CONCRETE_POWDER = RegistryKey.unsafeOf("cyan_concrete_powder");
 
+    RegistryKey<Block> CYAN_CONCRETE_SLAB = RegistryKey.unsafeOf("cyan_concrete_slab");
+
+    RegistryKey<Block> CYAN_CONCRETE_STAIRS = RegistryKey.unsafeOf("cyan_concrete_stairs");
+
     RegistryKey<Block> CYAN_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("cyan_glazed_terracotta");
 
     RegistryKey<Block> CYAN_SHULKER_BOX = RegistryKey.unsafeOf("cyan_shulker_box");
@@ -907,6 +923,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> GRAY_CONCRETE_POWDER = RegistryKey.unsafeOf("gray_concrete_powder");
 
+    RegistryKey<Block> GRAY_CONCRETE_SLAB = RegistryKey.unsafeOf("gray_concrete_slab");
+
+    RegistryKey<Block> GRAY_CONCRETE_STAIRS = RegistryKey.unsafeOf("gray_concrete_stairs");
+
     RegistryKey<Block> GRAY_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("gray_glazed_terracotta");
 
     RegistryKey<Block> GRAY_SHULKER_BOX = RegistryKey.unsafeOf("gray_shulker_box");
@@ -938,6 +958,10 @@ public interface BlockKeys {
     RegistryKey<Block> GREEN_CONCRETE = RegistryKey.unsafeOf("green_concrete");
 
     RegistryKey<Block> GREEN_CONCRETE_POWDER = RegistryKey.unsafeOf("green_concrete_powder");
+
+    RegistryKey<Block> GREEN_CONCRETE_SLAB = RegistryKey.unsafeOf("green_concrete_slab");
+
+    RegistryKey<Block> GREEN_CONCRETE_STAIRS = RegistryKey.unsafeOf("green_concrete_stairs");
 
     RegistryKey<Block> GREEN_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("green_glazed_terracotta");
 
@@ -1093,6 +1117,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> LIGHT_BLUE_CONCRETE_POWDER = RegistryKey.unsafeOf("light_blue_concrete_powder");
 
+    RegistryKey<Block> LIGHT_BLUE_CONCRETE_SLAB = RegistryKey.unsafeOf("light_blue_concrete_slab");
+
+    RegistryKey<Block> LIGHT_BLUE_CONCRETE_STAIRS = RegistryKey.unsafeOf("light_blue_concrete_stairs");
+
     RegistryKey<Block> LIGHT_BLUE_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("light_blue_glazed_terracotta");
 
     RegistryKey<Block> LIGHT_BLUE_SHULKER_BOX = RegistryKey.unsafeOf("light_blue_shulker_box");
@@ -1124,6 +1152,10 @@ public interface BlockKeys {
     RegistryKey<Block> LIGHT_GRAY_CONCRETE = RegistryKey.unsafeOf("light_gray_concrete");
 
     RegistryKey<Block> LIGHT_GRAY_CONCRETE_POWDER = RegistryKey.unsafeOf("light_gray_concrete_powder");
+
+    RegistryKey<Block> LIGHT_GRAY_CONCRETE_SLAB = RegistryKey.unsafeOf("light_gray_concrete_slab");
+
+    RegistryKey<Block> LIGHT_GRAY_CONCRETE_STAIRS = RegistryKey.unsafeOf("light_gray_concrete_stairs");
 
     RegistryKey<Block> LIGHT_GRAY_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("light_gray_glazed_terracotta");
 
@@ -1167,6 +1199,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> LIME_CONCRETE_POWDER = RegistryKey.unsafeOf("lime_concrete_powder");
 
+    RegistryKey<Block> LIME_CONCRETE_SLAB = RegistryKey.unsafeOf("lime_concrete_slab");
+
+    RegistryKey<Block> LIME_CONCRETE_STAIRS = RegistryKey.unsafeOf("lime_concrete_stairs");
+
     RegistryKey<Block> LIME_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("lime_glazed_terracotta");
 
     RegistryKey<Block> LIME_SHULKER_BOX = RegistryKey.unsafeOf("lime_shulker_box");
@@ -1202,6 +1238,10 @@ public interface BlockKeys {
     RegistryKey<Block> MAGENTA_CONCRETE = RegistryKey.unsafeOf("magenta_concrete");
 
     RegistryKey<Block> MAGENTA_CONCRETE_POWDER = RegistryKey.unsafeOf("magenta_concrete_powder");
+
+    RegistryKey<Block> MAGENTA_CONCRETE_SLAB = RegistryKey.unsafeOf("magenta_concrete_slab");
+
+    RegistryKey<Block> MAGENTA_CONCRETE_STAIRS = RegistryKey.unsafeOf("magenta_concrete_stairs");
 
     RegistryKey<Block> MAGENTA_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("magenta_glazed_terracotta");
 
@@ -1391,6 +1431,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> ORANGE_CONCRETE_POWDER = RegistryKey.unsafeOf("orange_concrete_powder");
 
+    RegistryKey<Block> ORANGE_CONCRETE_SLAB = RegistryKey.unsafeOf("orange_concrete_slab");
+
+    RegistryKey<Block> ORANGE_CONCRETE_STAIRS = RegistryKey.unsafeOf("orange_concrete_stairs");
+
     RegistryKey<Block> ORANGE_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("orange_glazed_terracotta");
 
     RegistryKey<Block> ORANGE_POPLAR_LEAVES = RegistryKey.unsafeOf("orange_poplar_leaves");
@@ -1514,6 +1558,10 @@ public interface BlockKeys {
     RegistryKey<Block> PINK_CONCRETE = RegistryKey.unsafeOf("pink_concrete");
 
     RegistryKey<Block> PINK_CONCRETE_POWDER = RegistryKey.unsafeOf("pink_concrete_powder");
+
+    RegistryKey<Block> PINK_CONCRETE_SLAB = RegistryKey.unsafeOf("pink_concrete_slab");
+
+    RegistryKey<Block> PINK_CONCRETE_STAIRS = RegistryKey.unsafeOf("pink_concrete_stairs");
 
     RegistryKey<Block> PINK_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("pink_glazed_terracotta");
 
@@ -1781,6 +1829,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> PURPLE_CONCRETE_POWDER = RegistryKey.unsafeOf("purple_concrete_powder");
 
+    RegistryKey<Block> PURPLE_CONCRETE_SLAB = RegistryKey.unsafeOf("purple_concrete_slab");
+
+    RegistryKey<Block> PURPLE_CONCRETE_STAIRS = RegistryKey.unsafeOf("purple_concrete_stairs");
+
     RegistryKey<Block> PURPLE_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("purple_glazed_terracotta");
 
     RegistryKey<Block> PURPLE_SHULKER_BOX = RegistryKey.unsafeOf("purple_shulker_box");
@@ -1838,6 +1890,10 @@ public interface BlockKeys {
     RegistryKey<Block> RED_CONCRETE = RegistryKey.unsafeOf("red_concrete");
 
     RegistryKey<Block> RED_CONCRETE_POWDER = RegistryKey.unsafeOf("red_concrete_powder");
+
+    RegistryKey<Block> RED_CONCRETE_SLAB = RegistryKey.unsafeOf("red_concrete_slab");
+
+    RegistryKey<Block> RED_CONCRETE_STAIRS = RegistryKey.unsafeOf("red_concrete_stairs");
 
     RegistryKey<Block> RED_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("red_glazed_terracotta");
 
@@ -2453,6 +2509,10 @@ public interface BlockKeys {
 
     RegistryKey<Block> WHITE_CONCRETE_POWDER = RegistryKey.unsafeOf("white_concrete_powder");
 
+    RegistryKey<Block> WHITE_CONCRETE_SLAB = RegistryKey.unsafeOf("white_concrete_slab");
+
+    RegistryKey<Block> WHITE_CONCRETE_STAIRS = RegistryKey.unsafeOf("white_concrete_stairs");
+
     RegistryKey<Block> WHITE_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("white_glazed_terracotta");
 
     RegistryKey<Block> WHITE_SHULKER_BOX = RegistryKey.unsafeOf("white_shulker_box");
@@ -2494,6 +2554,10 @@ public interface BlockKeys {
     RegistryKey<Block> YELLOW_CONCRETE = RegistryKey.unsafeOf("yellow_concrete");
 
     RegistryKey<Block> YELLOW_CONCRETE_POWDER = RegistryKey.unsafeOf("yellow_concrete_powder");
+
+    RegistryKey<Block> YELLOW_CONCRETE_SLAB = RegistryKey.unsafeOf("yellow_concrete_slab");
+
+    RegistryKey<Block> YELLOW_CONCRETE_STAIRS = RegistryKey.unsafeOf("yellow_concrete_stairs");
 
     RegistryKey<Block> YELLOW_GLAZED_TERRACOTTA = RegistryKey.unsafeOf("yellow_glazed_terracotta");
 

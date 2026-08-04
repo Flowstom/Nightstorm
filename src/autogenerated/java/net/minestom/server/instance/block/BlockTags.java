@@ -135,6 +135,10 @@ public interface BlockTags {
 
     TagKey<Block> CONCRETE_POWDERS = TagKey.unsafeOf("concrete_powders");
 
+    TagKey<Block> CONCRETE_SLABS = TagKey.unsafeOf("concrete_slabs");
+
+    TagKey<Block> CONCRETE_STAIRS = TagKey.unsafeOf("concrete_stairs");
+
     TagKey<Block> CONVERTIBLE_TO_MUD = TagKey.unsafeOf("convertible_to_mud");
 
     TagKey<Block> COPPER = TagKey.unsafeOf("copper");
