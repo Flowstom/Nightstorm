@@ -1,0 +1,197 @@
+package net.minestom.server.entity;
+
+import net.kyori.adventure.text.Component;
+import net.minestom.server.coordinate.Pos;
+import net.minestom.server.entity.metadata.avatar.MannequinMeta;
+import net.minestom.server.entity.metadata.display.ItemDisplayMeta;
+import net.minestom.server.network.packet.server.play.EntityMetaDataPacket;
+import net.minestom.testing.Env;
+import net.minestom.testing.EnvTest;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.function.Consumer;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+@EnvTest
+public class EntityMetaIntegrationTest {
+
+    @Test
+    public void notifyAboutChanges(Env env) {
+        var instance = env.createFlatInstance();
+        var connection = env.createConnection();
+        var connection2 = env.createConnection();
+        var player = connection.connect(instance, new Pos(0, 42, 1));
+        var otherPlayer = connection2.connect(instance, new Pos(0, 42, 0));
+
+        assertTrue(player.getViewers().contains(otherPlayer));
+
+        var incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+
+        player.getEntityMeta().setNotifyAboutChanges(false);
+        player.setInvisible(true);
+        player.setNoGravity(true);
+        player.setSneaking(true);
+        // No packets should be received here: notifyAboutChanges is off
+        incomingPackets.assertEmpty();
+        incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+
+        player.getEntityMeta().setNotifyAboutChanges(true);
+
+        var packets = incomingPackets.collect();
+        assertEquals(1, packets.size());
+        validMetaDataPackets(packets, player.getEntityId(), entry -> {
+            final Object content = entry.value();
+            if (entry.type() == Metadata.TYPE_BYTE) {
+                assertEquals((byte) 34, content);
+            } else if (entry.type() == Metadata.TYPE_BOOLEAN) {
+                assertTrue((boolean) content);
+            } else if (entry.type() == Metadata.TYPE_POSE) {
+                assertEquals(EntityPose.SNEAKING, content);
+            } else {
+                Assertions.fail("Invalid MetaData entry");
+            }
+        });
+
+        // Now test the "normal" behavior: Updates should be sent instantly
+        incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+        player.setInvisible(false);
+        player.setNoGravity(false);
+        player.setSneaking(false);
+        packets = incomingPackets.collect();
+        validMetaDataPackets(packets, player.getEntityId(), entry -> {
+            final Object content = entry.value();
+            if (entry.type() == Metadata.TYPE_BYTE) {
+                assertTrue(content.equals((byte) 2) || content.equals((byte) 0));
+            } else if (entry.type() == Metadata.TYPE_BOOLEAN) {
+                assertFalse((boolean) content);
+            } else if (entry.type() == Metadata.TYPE_POSE) {
+                assertEquals(EntityPose.STANDING, content);
+            } else {
+                Assertions.fail("Invalid MetaData entry");
+            }
+        });
+        assertEquals(4, packets.size());
+    }
+
+    private static void validMetaDataPackets(List<EntityMetaDataPacket> packets, int entityId, Consumer<Metadata.Entry<?>> contentChecker) {
+        for (var packet : packets) {
+            assertEquals(packet.entityId(), entityId);
+            for (var entry : packet.entries().values()) {
+                contentChecker.accept(entry);
+            }
+        }
+    }
+
+    @Test
+    @SuppressWarnings("deprecation") // deliberately keeps coverage of the deprecated API until its removal
+    public void customName(Env env) {
+        //Base things.
+        var connection = env.createConnection();
+        var instance = env.createFlatInstance();
+        Pos startPos = new Pos(0, 42, 1);
+
+        //Viewer.
+        var player = connection.connect(instance, startPos);
+
+        //Tracks incoming packets.
+        var incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+
+        //Creates entity and name.
+        Entity entity = new Entity(EntityType.BEE);
+        entity.setAutoViewable(false);
+        entity.getEntityMeta().setNotifyAboutChanges(false);
+        entity.setCustomName(Component.text("Custom Name"));
+        entity.setCustomNameVisible(true);
+        entity.setInstance(instance, startPos).join();
+        entity.getEntityMeta().setNotifyAboutChanges(true);
+        entity.addViewer(player);
+
+        //Listen packets to check if entity name is "Custom Name".
+        //This is first test, and it is not related to "custom name" bug. Therefore, it should work.
+        var packets = incomingPackets.collect();
+        validMetaDataPackets(packets, entity.getEntityId(), entry -> {
+            if (entry.type() != Metadata.TYPE_OPT_CHAT) return;
+            assertEquals(Component.text("Custom Name"), entry.value());
+        });
+
+        //Removes viewer.
+        entity.removeViewer(player);
+
+        //Tracks incoming packets again. (resets previous)
+        incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+
+        //Sets entity name again.
+        entity.setCustomName(Component.text("Custom Name 2"));
+
+        //After setting entity's name, we add viewer again to see if the entity name is "Custom Name 2"
+        entity.addViewer(player);
+
+        //Checks if entity name is "Custom Name 2" in the metadata entry.
+        assertEquals(Component.text("Custom Name 2"), entity.getCustomName());
+
+        //Listen packets to check if entity name is "Custom Name 2".
+        packets = incomingPackets.collect();
+        validMetaDataPackets(packets, entity.getEntityId(), entry -> {
+            if (entry.type() != Metadata.TYPE_OPT_CHAT) return;
+            assertEquals(Component.text("Custom Name 2"), entry.value());
+        });
+    }
+
+    @Test
+    public void displayInterpolationDurationAlwaysSend(Env env) {
+        // ensure that display entity interpolation start delta is always sent even if we send the same value repeatedly.
+
+        var connection = env.createConnection();
+        var instance = env.createFlatInstance();
+        var startPos = new Pos(0, 42, 1);
+
+        connection.connect(instance, startPos);
+        var incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+
+        var entity = new Entity(EntityType.ITEM_DISPLAY);
+        entity.setInstance(instance, startPos).join();
+        var meta = (ItemDisplayMeta) entity.getEntityMeta();
+
+        meta.setTransformationInterpolationStartDelta(1);
+        meta.setTransformationInterpolationStartDelta(2); // same tick
+
+        env.tick();
+        env.tick();
+
+        meta.setTransformationInterpolationStartDelta(3);
+
+        var packets = incomingPackets.collect();
+        assertEquals(4, packets.size()); // the 3 we sent, and 1 more for the spawn
+        assertEquals(1, packets.get(1).entries().get(MetadataDef.Display.INTERPOLATION_DELAY.index()).value());
+        assertEquals(2, packets.get(2).entries().get(MetadataDef.Display.INTERPOLATION_DELAY.index()).value());
+        assertEquals(3, packets.get(3).entries().get(MetadataDef.Display.INTERPOLATION_DELAY.index()).value());
+    }
+
+    @Test
+    public void testMannequin(Env env) {
+        // Ensure that mannequins have all skin layers by default, and that they can be changed by setting the metadata.
+        var connection = env.createConnection();
+        var instance = env.createFlatInstance();
+        var startPos = new Pos(0, 42, 1);
+
+        connection.connect(instance, startPos);
+        var incomingPackets = connection.trackIncoming(EntityMetaDataPacket.class);
+
+        var entity = new Entity(EntityType.MANNEQUIN);
+        var meta = (MannequinMeta) entity.getEntityMeta();
+        Assertions.assertTrue(meta.isCapeEnabled());
+        Assertions.assertEquals(0x7F, meta.getDisplayedSkinParts()); // all enabled
+        meta.setDisplayedSkinParts((byte) 0); // disable all
+        entity.setInstance(instance, startPos).join();
+
+        incomingPackets.assertSingle(packet -> {
+            assertEquals(packet.entityId(), entity.getEntityId());
+            var entry = packet.entries().get(MetadataDef.Mannequin.DISPLAYED_MODEL_PARTS_FLAGS.index());
+            assertEquals(Metadata.TYPE_BYTE, entry.type());
+            assertEquals((byte) 0, entry.value());
+        });
+    }
+}

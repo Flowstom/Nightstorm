@@ -1,0 +1,71 @@
+package net.minestom.demo.commands;
+
+import net.kyori.adventure.text.Component;
+import net.minestom.server.command.CommandSender;
+import net.minestom.server.command.builder.Command;
+import net.minestom.server.command.builder.CommandContext;
+import net.minestom.server.command.builder.arguments.ArgumentEnum;
+import net.minestom.server.command.builder.arguments.ArgumentType;
+import net.minestom.server.command.builder.condition.Conditions;
+import net.minestom.server.command.builder.exception.ArgumentSyntaxException;
+import net.minestom.server.entity.EntityCreature;
+import net.minestom.server.entity.EntityType;
+import net.minestom.server.entity.Player;
+import net.minestom.server.entity.metadata.animal.HorseMeta;
+
+import java.util.Locale;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public class HorseCommand extends Command {
+
+    public HorseCommand() {
+        super("horse");
+        setCondition(Conditions::playerOnly);
+        setDefaultExecutor(HorseCommand::defaultExecutor);
+        var babyArg = ArgumentType.Boolean("baby");
+        var markingArg = ArgumentType.Enum("marking", HorseMeta.Marking.class).setFormat(ArgumentEnum.Format.LOWER_CASED);
+        var variantArg = ArgumentType.Enum("variant", HorseMeta.Variant.class).setFormat(ArgumentEnum.Format.LOWER_CASED);
+        setArgumentCallback(HorseCommand::onBabyError, babyArg);
+        setArgumentCallback(HorseCommand::onMarkingError, markingArg);
+        setArgumentCallback(HorseCommand::onVariantError, variantArg);
+        addSyntax(HorseCommand::onHorseCommand, babyArg, markingArg, variantArg);
+    }
+
+    private static void defaultExecutor(CommandSender sender, CommandContext context) {
+        sender.sendMessage(Component.text("Correct usage: /horse <baby> <marking> <variant>"));
+    }
+
+    private static void onBabyError(CommandSender sender, ArgumentSyntaxException exception) {
+        sender.sendMessage(Component.text("SYNTAX ERROR: '" + exception.getInput() + "' should be replaced by 'true' or 'false'"));
+    }
+
+    private static void onMarkingError(CommandSender sender, ArgumentSyntaxException exception) {
+        String values = Stream.of(HorseMeta.Marking.values())
+                .map(value -> "'" + value.name().toLowerCase(Locale.ROOT) + "'")
+                .collect(Collectors.joining(", "));
+        sender.sendMessage(Component.text("SYNTAX ERROR: '" + exception.getInput() + "' should be replaced by " + values + "."));
+    }
+
+    private static void onVariantError(CommandSender sender, ArgumentSyntaxException exception) {
+        String values = Stream.of(HorseMeta.Variant.values())
+                .map(value -> "'" + value.name().toLowerCase(Locale.ROOT) + "'")
+                .collect(Collectors.joining(", "));
+        sender.sendMessage(Component.text("SYNTAX ERROR: '" + exception.getInput() + "' should be replaced by " + values + "."));
+    }
+
+    private static void onHorseCommand(CommandSender sender, CommandContext context) {
+        var player = (Player) sender;
+
+        boolean baby = context.get("baby");
+        HorseMeta.Marking marking = context.get("marking");
+        HorseMeta.Variant variant = context.get("variant");
+        var horse = new EntityCreature(EntityType.HORSE);
+        var meta = (HorseMeta) horse.getEntityMeta();
+        meta.setBaby(baby);
+        meta.setVariantAndMarking(variant, marking);
+        //noinspection ConstantConditions - It should be impossible to execute a command without being in an instance
+        horse.setInstance(player.getInstance(), player.getPosition()).join();
+    }
+
+}

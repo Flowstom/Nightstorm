@@ -1,0 +1,66 @@
+package net.minestom.server.command.builder.arguments.minecraft;
+
+import net.minestom.server.command.CommandSender;
+import net.minestom.server.command.builder.arguments.Argument;
+import net.minestom.server.command.builder.exception.ArgumentSyntaxException;
+import net.minestom.server.utils.Range;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.regex.Pattern;
+
+/**
+ * Abstract class used by {@link ArgumentIntRange} and {@link ArgumentFloatRange}.
+ *
+ * @param <T> the type of the range
+ */
+public abstract class ArgumentRange<T extends Range<N>, N extends Number> extends Argument<T> {
+
+    public static final int FORMAT_ERROR = -1;
+    private final Function<String, N> parser;
+    private final BiFunction<@Nullable N, @Nullable N, T> rangeConstructor;
+
+    public ArgumentRange(String id, Function<String, N> parser, BiFunction<N, N, T> rangeConstructor) {
+        super(id);
+        this.parser = parser;
+        this.rangeConstructor = rangeConstructor;
+    }
+
+    @Override
+    public T parse(CommandSender sender, String input) throws ArgumentSyntaxException {
+        try {
+            final String[] split = input.split(Pattern.quote(".."), -1);
+
+            if (split.length == 2) {
+                final N min;
+                final N max;
+                if (split[0].isEmpty() && !split[1].isEmpty()) {
+                    // Format ..NUMBER
+                    min = null;
+                    max = parser.apply(split[1]);
+                } else if (!split[0].isEmpty() && split[1].isEmpty()) {
+                    // Format NUMBER..
+                    min = parser.apply(split[0]);
+                    max = null;
+                } else if (!split[0].isEmpty()) {
+                    // Format NUMBER..NUMBER
+                    min = parser.apply(split[0]);
+                    max = parser.apply(split[1]);
+                } else {
+                    // Format ..
+                    throw new ArgumentSyntaxException("Invalid range format", input, FORMAT_ERROR);
+                }
+                return rangeConstructor.apply(min, max);
+            } else if (split.length == 1) {
+                final N number = parser.apply(input);
+                return rangeConstructor.apply(number, number);
+            }
+        } catch (NumberFormatException e2) {
+            throw new ArgumentSyntaxException("Invalid number", input, FORMAT_ERROR);
+        } catch (IllegalArgumentException e) {
+            throw new ArgumentSyntaxException("Invalid range", input, FORMAT_ERROR);
+        }
+        throw new ArgumentSyntaxException("Invalid range format", input, FORMAT_ERROR);
+    }
+}

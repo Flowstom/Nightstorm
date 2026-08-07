@@ -1,0 +1,227 @@
+package net.minestom.server.component;
+
+import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+import net.minestom.server.codec.Codec;
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.utils.Unit;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Collection;
+import java.util.function.Function;
+import java.util.function.IntFunction;
+
+/**
+ * <p>Represents any container of {@link DataComponent}s.</p>
+ *
+ * <p>This type is capable of storing a patch of added and removed components on top of a 'prototype', or existing
+ * set of components. See {@link #diff(DataComponentMap, DataComponentMap)}.</p>
+ */
+@ApiStatus.Experimental
+// Static fields intentionally construct the implementation subclass; the cycle cannot
+// race because the implementation types are only ever reached through this interface
+@SuppressWarnings("ClassInitializationDeadlock")
+public sealed interface DataComponentMap extends DataComponent.Holder permits DataComponentMapImpl {
+    DataComponentMap EMPTY = new DataComponentMapImpl(Int2ObjectMaps.emptyMap());
+
+    static DataComponentMap.Builder builder() {
+        return new DataComponentMapImpl.BuilderImpl(new Int2ObjectArrayMap<>());
+    }
+
+    static DataComponentMap.PatchBuilder patchBuilder() {
+        return new DataComponentMapImpl.PatchBuilderImpl(new Int2ObjectArrayMap<>());
+    }
+
+    @ApiStatus.Internal
+    static NetworkBuffer.Type<DataComponentMap> networkType(
+            IntFunction<DataComponent<?>> idToType) {
+        return new DataComponentMapImpl.NetworkTypeImpl(idToType, false, true);
+    }
+
+    /**
+     * Creates a network type for the given component type. For internal use only, get the value from the target component class.
+     */
+    @ApiStatus.Internal
+    static Codec<DataComponentMap> codec(
+            IntFunction<DataComponent<?>> idToType,
+            Function<String, DataComponent<?>> nameToType
+    ) {
+        return new DataComponentMapImpl.CodecImpl(idToType, nameToType, false);
+    }
+
+    /**
+     * Creates a network type for the given component type. For internal use only, get the value from the target component class.
+     */
+    @ApiStatus.Internal
+    static NetworkBuffer.Type<DataComponentMap> patchNetworkType(IntFunction<DataComponent<?>> idToType, boolean trusted) {
+        return new DataComponentMapImpl.NetworkTypeImpl(idToType, true, trusted);
+    }
+
+    /**
+     * Creates a network type for the given component type. For internal use only, get the value from the target component class.
+     */
+    @ApiStatus.Internal
+    static Codec<DataComponentMap> patchCodec(
+            IntFunction<DataComponent<?>> idToType,
+            Function<String, DataComponent<?>> nameToType
+    ) {
+        return new DataComponentMapImpl.CodecImpl(idToType, nameToType, true);
+    }
+
+    /**
+     * Minimizes a component patch relative to a prototype without changing its resolved result.
+     * Overrides matching the prototype and removals of components absent from the prototype are omitted; components
+     * not mentioned by the patch remain inherited from the prototype.
+     *
+     * @param prototype the component defaults to compare against
+     * @param patch the component overrides to minimize
+     * @return the minimal equivalent patch, or {@link #EMPTY} when no explicit overrides are needed
+     */
+    static DataComponentMap diff(DataComponentMap prototype, DataComponentMap patch) {
+        final DataComponentMapImpl patchImpl = (DataComponentMapImpl) patch;
+        if (patchImpl.components().isEmpty()) return EMPTY;
+
+        final DataComponentMapImpl protoImpl = (DataComponentMapImpl) prototype;
+
+        final Int2ObjectArrayMap<@Nullable Object> diff = new Int2ObjectArrayMap<>(patchImpl.components());
+        var iter = diff.int2ObjectEntrySet().fastIterator();
+        while (iter.hasNext()) {
+            final var entry = iter.next(); // Entry in patch
+            final var protoComp = protoImpl.components().get(entry.getIntKey()); // Entry in prototype
+            if (entry.getValue() == null) {
+                // If the component is removed, remove it from the diff if it is not in the prototype
+                if (!protoImpl.components().containsKey(entry.getIntKey())) {
+                    iter.remove();
+                }
+            } else if (protoComp != null && protoComp.equals(entry.getValue())) {
+                // If the component is the same as in the prototype, remove it from the diff
+                iter.remove();
+            }
+        }
+
+        return DataComponentMapImpl.fromMap(diff);
+    }
+
+    /**
+     * Resolves a component patch against a prototype into an absolute component map.
+     * Components set by the patch replace prototype values, components removed by the patch are omitted, and
+     * components not mentioned by the patch retain their prototype values.
+     *
+     * @param prototype the component defaults to resolve against
+     * @param patch the component overrides to apply
+     * @return the resolved component map, or {@code prototype} when the patch is empty
+     */
+    static DataComponentMap applyPatch(DataComponentMap prototype, DataComponentMap patch) {
+        final DataComponentMapImpl patchImpl = (DataComponentMapImpl) patch;
+        if (patchImpl.components().isEmpty()) return prototype;
+
+        final DataComponentMapImpl protoImpl = (DataComponentMapImpl) prototype;
+        final Int2ObjectArrayMap<@Nullable Object> result = new Int2ObjectArrayMap<>(protoImpl.components());
+        for (var entry : patchImpl.components().int2ObjectEntrySet()) {
+            if (entry.getValue() == null) {
+                result.remove(entry.getIntKey());
+            } else {
+                result.put(entry.getIntKey(), entry.getValue());
+            }
+        }
+        return DataComponentMapImpl.fromMap(result);
+    }
+
+    boolean isEmpty();
+
+    /**
+     * Does a 'patch'ed has against the given prototype. That is, this map is treated as the primary source, but if
+     * unspecified, the given prototype is used as a fallback.
+     *
+     * @param prototype The prototype to fall back to
+     * @param component The component to check
+     * @return True if the component is present (taking into account the prototype).
+     */
+    boolean has(DataComponentMap prototype, DataComponent<?> component);
+
+    /**
+     * Does a 'patch'ed get against the given prototype. That is, this map is treated as the primary source, but if
+     * unspecified, the given prototype is used as a fallback.
+     *
+     * @param prototype The prototype to fall back to
+     * @param component The component to get
+     * @return The value of the component, or null if not present (taking into account the prototype).
+     * @param <T> The type of the component
+     */
+    <T> @Nullable T get(DataComponentMap prototype, DataComponent<T> component);
+
+    /**
+     * Adds the component, overwriting any prior value if present.
+     * <br>
+     * Note: {@link DataComponent#freeze(Object)} will be called, so identity may be mutated.
+     *
+     * @param component component to set
+     * @param value value of T
+     * @param <T> the data component type
+     * @return A new map with the component set to the value
+     */
+    <T> DataComponentMap set(DataComponent<T> component, T value);
+
+    default DataComponentMap set(DataComponent<Unit> component) {
+        return set(component, Unit.INSTANCE);
+    }
+
+    /**
+     * Removes the component from the map (or patch).
+     *
+     * @param component The component to remove
+     * @return A new map with the component removed
+     */
+    DataComponentMap remove(DataComponent<?> component);
+
+    /**
+     * Removes the explicit override for a component from this patch.
+     *
+     * <p>This operation is only meaningful for component patches. When the patch is applied to a prototype,
+     * the component will resolve to the prototype value.</p>
+     *
+     * @param component the component whose override should be reset
+     * @return a new patch without an override for the component, or this patch if none was present
+     */
+    DataComponentMap reset(DataComponent<?> component);
+
+    Collection<DataComponent.Value> entrySet();
+
+    Builder toBuilder();
+
+    PatchBuilder toPatchBuilder();
+
+    sealed interface Builder extends DataComponent.Holder permits DataComponentMapImpl.BuilderImpl {
+
+        <T> Builder set(DataComponent<T> component, T value);
+
+        default Builder set(DataComponent<Unit> component) {
+            return set(component, Unit.INSTANCE);
+        }
+
+        DataComponentMap build();
+    }
+
+    sealed interface PatchBuilder extends DataComponent.Holder permits DataComponentMapImpl.PatchBuilderImpl {
+
+        <T> PatchBuilder set(DataComponent<T> component, T value);
+
+        default PatchBuilder set(DataComponent<Unit> component) {
+            return set(component, Unit.INSTANCE);
+        }
+
+        PatchBuilder remove(DataComponent<?> component);
+
+        /**
+         * Removes the explicit override for a component from this patch builder.
+         *
+         * @param component the component whose override should be reset
+         * @return this builder
+         */
+        PatchBuilder reset(DataComponent<?> component);
+
+        DataComponentMap build();
+    }
+
+}

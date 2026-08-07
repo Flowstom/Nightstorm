@@ -1,0 +1,240 @@
+package net.minestom.server.network.packet;
+
+import net.minestom.server.ServerFlag;
+import net.minestom.server.network.ConnectionState;
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.network.packet.client.ClientPacket;
+import net.minestom.server.network.packet.server.ServerPacket;
+import org.jetbrains.annotations.ApiStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.BiFunction;
+import java.util.zip.DataFormatException;
+
+import static net.minestom.server.network.NetworkBuffer.VAR_INT;
+
+/**
+ * Tools to read packets from a {@link NetworkBuffer} for network processing.
+ * <p>
+ * Fairly internal and performance sensitive.
+ */
+@SuppressWarnings("ALL")
+@ApiStatus.Internal
+public final class PacketReading {
+    private final static Logger LOGGER = LoggerFactory.getLogger(PacketReading.class);
+
+    private static final int MAX_VAR_INT_SIZE = 5;
+    private static final Result.Empty<?> EMPTY_CLIENT_PACKET = new Result.Empty<>();
+
+    @SuppressWarnings("unchecked")
+    private static <T> Result<T> emptyResult() {
+        return (Result<T>) EMPTY_CLIENT_PACKET;
+    }
+
+    public sealed interface Result<T> {
+
+        /**
+         * At least one packet was read.
+         * The buffer may still contain half-read packets and should therefore be compacted for next read.
+         */
+        record Success<T>(List<ParsedPacket<T>> packets) implements Result<T> {
+            public Success {
+                if (packets.isEmpty()) {
+                    throw new IllegalArgumentException("Empty packets");
+                }
+                packets = List.copyOf(packets);
+            }
+
+            public Success(ParsedPacket<T> packet) {
+                this(List.of(packet));
+            }
+        }
+
+        /**
+         * Represents no packet to read. Can generally be ignored.
+         * <p>
+         * Happens when a packet length or payload couldn't be read, but the buffer has enough capacity.
+         */
+        record Empty<T>() implements Result<T> {
+        }
+
+        /**
+         * Represents a failure to read a packet due to insufficient buffer capacity.
+         * <p>
+         * Buffer should be expanded to at least {@code requiredCapacity} bytes.
+         * <p>
+         * If the buffer does not allow to read the packet length, max var-int length is returned.
+         */
+        record Failure<T>(long requiredCapacity) implements Result<T> {
+        }
+    }
+
+    public record ParsedPacket<T>(ConnectionState nextState, T packet) {
+    }
+
+    public static Result<ClientPacket> readClients(
+            NetworkBuffer buffer,
+            ConnectionState state,
+            boolean compressed
+    ) throws DataFormatException {
+        return readPackets(buffer, PacketVanilla.CLIENT_PACKET_PARSER, state, PacketVanilla::nextClientState, compressed);
+    }
+
+    public static Result<ServerPacket> readServers(
+            NetworkBuffer buffer,
+            ConnectionState state,
+            boolean compressed
+    ) throws DataFormatException {
+        return readPackets(buffer, PacketVanilla.SERVER_PACKET_PARSER, state, PacketVanilla::nextServerState, compressed);
+    }
+
+    public static <T> Result<T> readPackets(
+            NetworkBuffer buffer,
+            PacketParser<T> parser,
+            ConnectionState state,
+            BiFunction<T, ConnectionState, ConnectionState> stateUpdater,
+            boolean compressed
+    ) throws DataFormatException {
+        List<ParsedPacket<T>> packets = new ArrayList<>();
+        readLoop:
+        while (buffer.readableBytes() > 0) {
+            final Result<T> result = readPacket(buffer, parser, state, stateUpdater, compressed);
+            if (buffer.readableBytes() == 0 && packets.isEmpty()) return result;
+            switch (result) {
+                case Result.Success<T> success -> {
+                    assert success.packets().size() == 1;
+                    final ParsedPacket<T> parsedPacket = success.packets().getFirst();
+                    packets.add(parsedPacket);
+                    state = parsedPacket.nextState();
+                }
+                case Result.Empty<T> _ -> {
+                    break readLoop;
+                }
+                case Result.Failure<T> failure -> {
+                    return packets.isEmpty() ? failure : new Result.Success<>(packets);
+                }
+            }
+        }
+        return !packets.isEmpty() ? new Result.Success<>(packets) : emptyResult();
+    }
+
+    public static Result<ClientPacket> readClient(
+            NetworkBuffer buffer,
+            ConnectionState state,
+            boolean compressed
+    ) throws DataFormatException {
+        return readPacket(buffer, PacketVanilla.CLIENT_PACKET_PARSER, state, PacketVanilla::nextClientState, compressed);
+    }
+
+    public static Result<ServerPacket> readServer(
+            NetworkBuffer buffer,
+            ConnectionState state,
+            boolean compressed
+    ) throws DataFormatException {
+        return readPacket(buffer, PacketVanilla.SERVER_PACKET_PARSER, state, PacketVanilla::nextServerState, compressed);
+    }
+
+    public static <T> Result<T> readPacket(
+            NetworkBuffer buffer,
+            PacketParser<T> parser,
+            ConnectionState state,
+            BiFunction<T, ConnectionState, ConnectionState> stateUpdater,
+            boolean compressed
+    ) throws DataFormatException {
+        final long beginMark = buffer.readIndex();
+        // READ PACKET LENGTH
+        final int packetLength;
+        try {
+            packetLength = buffer.read(VAR_INT);
+        } catch (IndexOutOfBoundsException e) {
+            // Couldn't read a single var-int
+            return new Result.Failure<>(MAX_VAR_INT_SIZE);
+        }
+        final long readerStart = buffer.readIndex();
+        if (readerStart > buffer.writeIndex()) {
+            // Can't read the packet length, buffer has enough capacity
+            buffer.readIndex(beginMark);
+            return emptyResult();
+        }
+        final int maxPacketSize = maxPacketSize(state);
+        if (packetLength < 0) throw new DataFormatException("Packet length negative: " + packetLength);
+        if (packetLength > maxPacketSize) throw new DataFormatException("Packet too large: " + packetLength);
+        // READ PAYLOAD https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol#Packet_format
+        if (buffer.readableBytes() < packetLength) {
+            // Can't read the full packet
+            buffer.readIndex(beginMark);
+            final long packetLengthVarIntSize = readerStart - beginMark;
+            final long requiredCapacity = packetLengthVarIntSize + packetLength;
+            // Must return a failure if the buffer is too small
+            // Otherwise do nothing, and hope to read the packet remains next time
+            if (requiredCapacity > buffer.capacity()) return new Result.Failure<>(requiredCapacity);
+            else return emptyResult();
+        }
+        final PacketRegistry<? extends T> registry = parser.stateRegistry(state);
+        final long offset = buffer.advanceRead(packetLength); // ensureReadable checked above
+        final NetworkBuffer slice = buffer.slice(offset, packetLength, 0, packetLength).readOnly();
+        final T packet = readFramedPacket(slice, registry, compressed, maxPacketSize);
+        final ConnectionState nextState = stateUpdater.apply(packet, state);
+        return new Result.Success<>(new ParsedPacket<>(nextState, packet));
+    }
+
+    private static <T> T readFramedPacket(NetworkBuffer buffer,
+                                          PacketRegistry<T> registry,
+                                          boolean compressed,
+                                          int maxPacketSize) throws DataFormatException {
+        if (!compressed) {
+            // No compression format
+            return readPayload(buffer, registry);
+        }
+
+        final int dataLength = buffer.read(VAR_INT);
+        if (dataLength == 0) {
+            // Uncompressed packet
+            return readPayload(buffer, registry);
+        }
+        if (dataLength < 0 || dataLength > maxPacketSize) {
+            throw new DataFormatException("Invalid decompressed length: " + dataLength);
+        }
+
+        // Decompress the packet into the pooled buffer and read the uncompressed packet from it
+        NetworkBuffer poolBuffer = PacketVanilla.PACKET_POOL.get();
+        try {
+            if (poolBuffer.capacity() < dataLength) poolBuffer.resize(dataLength);
+            final NetworkBuffer slice = poolBuffer.slice(0, dataLength, 0, 0);
+            slice.registries(buffer.registries());
+            final long written = buffer.decompress(buffer.readIndex(), buffer.readableBytes(), slice);
+            if (written != dataLength) {
+                throw new DataFormatException("Decompressed length mismatch: expected " + dataLength + ", got " + written);
+            }
+            return readPayload(slice.readOnly(), registry);
+        } finally {
+            PacketVanilla.PACKET_POOL.add(poolBuffer);
+        }
+    }
+
+    private static <T> T readPayload(NetworkBuffer buffer, PacketRegistry<T> registry) {
+        final int packetId = buffer.read(VAR_INT);
+        final PacketRegistry.PacketInfo<T> packetInfo = registry.packetInfo(packetId);
+        final NetworkBuffer.Type<T> serializer = packetInfo.serializer();
+        try {
+            final T packet = serializer.read(buffer);
+            if (buffer.readableBytes() != 0) {
+                LOGGER.warn("WARNING: Packet ({}) 0x{} not fully read ({})",
+                        packetInfo.packetClass().getSimpleName(), Integer.toHexString(packetId), buffer);
+            }
+            return packet;
+        } catch (Exception e) {
+            throw new RuntimeException("failed to read packet " + packetInfo.packetClass(), e);
+        }
+    }
+
+    public static int maxPacketSize(ConnectionState state) {
+        return switch (state) {
+            case HANDSHAKE, LOGIN -> ServerFlag.MAX_PACKET_SIZE_PRE_AUTH;
+            default -> ServerFlag.MAX_PACKET_SIZE;
+        };
+    }
+}
