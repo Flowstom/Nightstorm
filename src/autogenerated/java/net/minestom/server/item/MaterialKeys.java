@@ -11,7 +11,7 @@ import org.jetbrains.annotations.ApiStatus;
 @SuppressWarnings("unused")
 @ApiStatus.NonExtendable
 public interface MaterialKeys {
-    RegistryKey<Material> ABANDONED_CAMPSITE_MAP = RegistryKey.unsafeOf("abandoned_campsite_map");
+    RegistryKey<Material> ABANDONED_CAMP_MAP = RegistryKey.unsafeOf("abandoned_camp_map");
 
     RegistryKey<Material> ACACIA_BOAT = RegistryKey.unsafeOf("acacia_boat");
 
@@ -62,8 +62,6 @@ public interface MaterialKeys {
     RegistryKey<Material> AMETHYST_CLUSTER = RegistryKey.unsafeOf("amethyst_cluster");
 
     RegistryKey<Material> AMETHYST_SHARD = RegistryKey.unsafeOf("amethyst_shard");
-
-    RegistryKey<Material> ANCIENT_CITY_MAP = RegistryKey.unsafeOf("ancient_city_map");
 
     RegistryKey<Material> ANCIENT_DEBRIS = RegistryKey.unsafeOf("ancient_debris");
 
@@ -418,6 +416,10 @@ public interface MaterialKeys {
     RegistryKey<Material> BUDDING_AMETHYST = RegistryKey.unsafeOf("budding_amethyst");
 
     RegistryKey<Material> BUNDLE = RegistryKey.unsafeOf("bundle");
+
+    RegistryKey<Material> BURIED_ANCIENT_CITY_MAP = RegistryKey.unsafeOf("buried_ancient_city_map");
+
+    RegistryKey<Material> BURIED_MINESHAFT_MAP = RegistryKey.unsafeOf("buried_mineshaft_map");
 
     RegistryKey<Material> BURIED_TREASURE_MAP = RegistryKey.unsafeOf("buried_treasure_map");
 
@@ -1758,8 +1760,6 @@ public interface MaterialKeys {
     RegistryKey<Material> MINECART = RegistryKey.unsafeOf("minecart");
 
     RegistryKey<Material> MINER_POTTERY_SHERD = RegistryKey.unsafeOf("miner_pottery_sherd");
-
-    RegistryKey<Material> MINESHAFT_MAP = RegistryKey.unsafeOf("mineshaft_map");
 
     RegistryKey<Material> MOJANG_BANNER_PATTERN = RegistryKey.unsafeOf("mojang_banner_pattern");
 

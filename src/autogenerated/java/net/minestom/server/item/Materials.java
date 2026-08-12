@@ -2507,13 +2507,13 @@ sealed interface Materials permits Material {
 
     Material BURIED_TREASURE_MAP = MaterialImpl.get(MaterialKeys.BURIED_TREASURE_MAP);
 
-    Material ANCIENT_CITY_MAP = MaterialImpl.get(MaterialKeys.ANCIENT_CITY_MAP);
+    Material BURIED_ANCIENT_CITY_MAP = MaterialImpl.get(MaterialKeys.BURIED_ANCIENT_CITY_MAP);
 
-    Material MINESHAFT_MAP = MaterialImpl.get(MaterialKeys.MINESHAFT_MAP);
+    Material BURIED_MINESHAFT_MAP = MaterialImpl.get(MaterialKeys.BURIED_MINESHAFT_MAP);
 
     Material DESERT_PYRAMID_MAP = MaterialImpl.get(MaterialKeys.DESERT_PYRAMID_MAP);
 
-    Material ABANDONED_CAMPSITE_MAP = MaterialImpl.get(MaterialKeys.ABANDONED_CAMPSITE_MAP);
+    Material ABANDONED_CAMP_MAP = MaterialImpl.get(MaterialKeys.ABANDONED_CAMP_MAP);
 
     Material WARM_OCEAN_RUINS_MAP = MaterialImpl.get(MaterialKeys.WARM_OCEAN_RUINS_MAP);
 
