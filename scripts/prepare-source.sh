@@ -70,7 +70,7 @@ data_jar=$(ls "$data_generator_directory/build/libs/"*.jar)
 cp "$data_jar" "$target_directory/.nightstorm/data.jar"
 
 # Use the generated data as a named module instead of copying its resources into Minestom's modules.
-perl -0pi -e 's/implementation\(libs\.minestomData\)/implementation(files(rootProject.file(".nightstorm\/data.jar")))/g' \
+perl -0pi -e 's/implementation\(libs\.minestomData\)/implementation(files(rootProject.projectDir.resolve(".nightstorm\/data.jar")))/g' \
   "$target_directory/build.gradle.kts" "$target_directory/code-generators/build.gradle.kts"
 
 # External Javadoc links are documentation-only and make releases depend on javadoc.io serving
