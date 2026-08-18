@@ -31,21 +31,32 @@ jobs:
       - name: Plan update
         id: plan
         env:
+          GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           build/install/nightstorm/bin/nightstorm plan --output "$RUNNER_TEMP/plan.json"
-          echo "branch=$(jq -r '.branch' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
-          echo "artifact-version=$(jq -r '.artifactVersion' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
+          branch=$(jq -r '.branch' "$RUNNER_TEMP/plan.json")
+          artifact_version=$(jq -r '.artifactVersion' "$RUNNER_TEMP/plan.json")
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "artifact-version=$artifact_version" >> "$GITHUB_OUTPUT"
           echo "minecraft_type=$(jq -r '.minecraftType' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
-          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$(jq -r '.branch' "$RUNNER_TEMP/plan.json")"; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$branch"; then
+            branch_exists=true
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            branch_exists=false
           fi
+          if gh release view "$artifact_version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            release_exists=true
+          else
+            release_exists=false
+          fi
+          echo "branch_exists=$branch_exists" >> "$GITHUB_OUTPUT"
+          echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
+          echo "Branch exists: $branch_exists; release exists: $release_exists"
 
       - name: Prepare generated source
         id: prepare
-        if: steps.plan.outputs.exists == 'false'
+        if: steps.plan.outputs.branch_exists == 'false' || steps.plan.outputs.release_exists == 'false'
         env:
           NIGHTSTORM_REPOSITORY: ${{ github.repository }}
         run: |
@@ -53,17 +64,17 @@ jobs:
           echo "java-version=$(tr -d '\n' < "$RUNNER_TEMP/generated/.nightstorm/java-version")" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v5
-        if: steps.plan.outputs.exists == 'false'
+        if: steps.plan.outputs.branch_exists == 'false' || steps.plan.outputs.release_exists == 'false'
         with:
           distribution: temurin
           java-version: ${{ steps.prepare.outputs.java-version }}
 
       - name: Generate and build
-        if: steps.plan.outputs.exists == 'false'
+        if: steps.plan.outputs.branch_exists == 'false' || steps.plan.outputs.release_exists == 'false'
         run: scripts/finalize-source.sh "$RUNNER_TEMP/plan.json" "$RUNNER_TEMP/generated" "$GITHUB_WORKSPACE/build/install/nightstorm/bin/nightstorm"
 
       - name: Push generated branch
-        if: steps.plan.outputs.exists == 'false'
+        if: steps.plan.outputs.branch_exists == 'false'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -77,7 +88,7 @@ jobs:
           git push origin "HEAD:refs/heads/${{ steps.plan.outputs.branch }}"
 
       - name: Publish Maven repository
-        if: steps.plan.outputs.exists == 'false'
+        if: steps.plan.outputs.release_exists == 'false'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           NIGHTSTORM_VERSION: ${{ steps.plan.outputs.artifact-version }}
@@ -97,13 +108,15 @@ jobs:
           git -C "$pages_directory" config user.name "github-actions[bot]"
           git -C "$pages_directory" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$pages_directory" add --all
-          git -C "$pages_directory" commit -m "Publish ${{ steps.plan.outputs.artifact-version }}"
+          if ! git -C "$pages_directory" diff --cached --quiet; then
+            git -C "$pages_directory" commit -m "Publish ${{ steps.plan.outputs.artifact-version }}"
+          fi
           git -C "$pages_directory" remote remove origin || true
           git -C "$pages_directory" remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git -C "$pages_directory" push origin HEAD:refs/heads/gh-pages
 
       - name: Create GitHub prerelease
-        if: steps.plan.outputs.exists == 'false'
+        if: steps.plan.outputs.release_exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
