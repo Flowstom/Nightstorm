@@ -55,7 +55,8 @@ class PacketUpdaterTest {
         final String updated = Files.readString(packetVanilla);
         assertFalse(updated.contains("AlphaPacket.class"));
         assertTrue(updated.indexOf("BetaPacket.class") < updated.indexOf("NightstormPlayClientboundNewEffectPacket.class"));
-        assertTrue(updated.contains("import net.minestom.server.network.packet.nightstorm.*;"));
+        assertTrue(updated.contains("import net.minestom.server.network.packet.nightstorm."
+                + "NightstormPlayClientboundNewEffectPacket;"));
         final String generated = Files.readString(packetDirectory.resolve("nightstorm/NightstormPlayClientboundNewEffectPacket.java"));
         assertTrue(generated.contains("implements ServerPacket.Play"));
         assertTrue(generated.contains("record NightstormPlayClientboundNewEffectPacket(List<Key> effects)"));
@@ -141,7 +142,8 @@ class PacketUpdaterTest {
                         "effects", "java.util.List<net.kyori.adventure.key.Key>", "NetworkBuffer.KEY.list()"))));
 
         assertEquals(1, result.generatedPackets());
-        assertTrue(Files.readString(packetVanilla).contains("packet.nightstorm.*"));
+        assertTrue(Files.readString(packetVanilla).contains("packet.nightstorm."
+                + "NightstormPlayClientboundNewEffectPacket;"));
         final String generatedSource = Files.readString(generatedPacket);
         assertTrue(generatedSource.contains("import java.util.List;"));
         assertTrue(generatedSource.contains("import net.kyori.adventure.key.Key;"));

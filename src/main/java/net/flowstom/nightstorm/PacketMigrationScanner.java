@@ -185,6 +185,9 @@ final class PacketMigrationScanner {
                                                           ClassNode after, List<RecordComponentNode> beforeComponents,
                                                           List<RecordComponentNode> afterComponents,
                                                           List<Integer> path) {
+        final Optional<Migration> positioned = movedNestedFloatPair(baseline, target, before, after,
+                beforeComponents, afterComponents, path);
+        if (positioned.isPresent()) return positioned;
         final Optional<Migration> reordered = reorderedBooleanEnum(target, before, after, beforeComponents,
                 afterComponents, path);
         if (reordered.isPresent()) return reordered;
@@ -192,6 +195,115 @@ final class PacketMigrationScanner {
                 beforeComponents, afterComponents, path);
         if (positionPath.isPresent()) return positionPath;
         return appendedPrimitive(baseline, target, before, after, beforeComponents, afterComponents, path);
+    }
+
+    private static Optional<Migration> movedNestedFloatPair(Classes baseline, Classes target, ClassNode before,
+                                                             ClassNode after,
+                                                             List<RecordComponentNode> beforeComponents,
+                                                             List<RecordComponentNode> afterComponents,
+                                                             List<Integer> path) {
+        if (beforeComponents.size() != afterComponents.size()) return Optional.empty();
+        for (int index = 0; index < beforeComponents.size(); index++) {
+            final String beforeElement = collectionElement(beforeComponents.get(index));
+            final String wrapperOwner = collectionElement(afterComponents.get(index));
+            if (beforeElement == null || wrapperOwner == null || beforeElement.equals(wrapperOwner)) continue;
+            final ClassNode wrapper = target.readIfPresent(wrapperOwner);
+            final ClassNode nested = target.readIfPresent(beforeElement);
+            if (wrapper == null || nested == null) continue;
+            final List<RecordComponentNode> wrapperComponents = components(wrapper);
+            if (wrapperComponents.size() != 3
+                    || !wrapperComponents.getFirst().descriptor.equals('L' + beforeElement + ';')
+                    || !wrapperComponents.get(1).descriptor.equals("F")
+                    || !wrapperComponents.get(2).descriptor.equals("F")
+                    || !componentReferencesCompositeCodec(wrapper, wrapperComponents.getFirst(), beforeElement, nested)
+                    || !componentReferencesCodec(wrapper, wrapperComponents.get(1), CODEC_OWNER, "FLOAT")
+                    || !componentReferencesCodec(wrapper, wrapperComponents.get(2), CODEC_OWNER, "FLOAT")) continue;
+            final List<String> floatNames = List.of(wrapperComponents.get(1).name, wrapperComponents.get(2).name);
+            if (nestedFloatPairMoved(baseline, target, beforeElement, floatNames)) {
+                return Optional.of(Migration.movedNestedFloats(append(path, index)));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String collectionElement(RecordComponentNode component) {
+        if (component.signature == null || !Set.of("Ljava/util/List;", "Ljava/util/Collection;")
+                .contains(component.descriptor)) return null;
+        final java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("^Ljava/util/(?:List|Collection)<L([^;<>]+);>;$")
+                .matcher(component.signature);
+        return matcher.matches() ? matcher.group(1) : null;
+    }
+
+    private static boolean nestedFloatPairMoved(Classes baseline, Classes target, String root,
+                                                 List<String> floatNames) {
+        final ArrayDeque<String> pending = new ArrayDeque<>();
+        final Set<String> visited = new HashSet<>();
+        pending.add(root);
+        while (!pending.isEmpty()) {
+            final String owner = pending.removeFirst();
+            if (!visited.add(owner)) continue;
+            final ClassNode before = baseline.readIfPresent(owner);
+            final ClassNode after = target.readIfPresent(owner);
+            if (before == null || after == null) continue;
+            if (manualFloatPairRemoved(before, after, floatNames)) return true;
+            for (String referenced : referencedTypes(components(before))) {
+                if (!visited.contains(referenced) && baseline.readIfPresent(referenced) != null
+                        && target.readIfPresent(referenced) != null) pending.addLast(referenced);
+            }
+        }
+        return false;
+    }
+
+    private static boolean manualFloatPairRemoved(ClassNode before, ClassNode after, List<String> names) {
+        if (names.size() != 2 || names.getFirst().equals(names.getLast())) return false;
+        for (String name : names) {
+            if (before.fields.stream().noneMatch(field -> (field.access & Opcodes.ACC_STATIC) == 0
+                    && field.name.equals(name) && field.desc.equals("F"))) return false;
+            if (after.fields.stream().anyMatch(field -> (field.access & Opcodes.ACC_STATIC) == 0
+                    && field.name.equals(name))) return false;
+        }
+        if (!writesFloatFields(before, names)) return false;
+        return bufferCalls(before, "writeFloat") == bufferCalls(after, "writeFloat") + 2
+                && bufferCalls(before, "readFloat") == bufferCalls(after, "readFloat") + 2;
+    }
+
+    private static boolean writesFloatFields(ClassNode owner, List<String> names) {
+        final Set<String> written = new HashSet<>();
+        for (MethodNode method : owner.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode call) || !call.name.equals("writeFloat")
+                        || !call.owner.endsWith("FriendlyByteBuf")) continue;
+                final AbstractInsnNode value = previousReal(instruction);
+                if (value instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
+                        && field.owner.equals(owner.name) && field.desc.equals("F")) written.add(field.name);
+            }
+        }
+        return written.containsAll(names);
+    }
+
+    private static int bufferCalls(ClassNode owner, String name) {
+        int result = 0;
+        for (MethodNode method : owner.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (instruction instanceof MethodInsnNode call && call.name.equals(name)
+                        && call.owner.endsWith("FriendlyByteBuf")) result++;
+            }
+        }
+        return result;
+    }
+
+    private static Set<String> referencedTypes(List<RecordComponentNode> components) {
+        final Set<String> result = new HashSet<>();
+        final java.util.regex.Pattern type = java.util.regex.Pattern.compile("L([^;<]+)");
+        for (RecordComponentNode component : components) {
+            final String direct = objectType(component.descriptor);
+            if (direct != null) result.add(direct);
+            if (component.signature == null) continue;
+            final java.util.regex.Matcher matcher = type.matcher(component.signature);
+            while (matcher.find()) result.add(matcher.group(1));
+        }
+        return result;
     }
 
     private static Optional<Migration> reorderedBooleanEnum(Classes target, ClassNode before, ClassNode after,
@@ -1354,11 +1466,27 @@ final class PacketMigrationScanner {
 
     private static List<RecordComponentNode> components(ClassNode node) {
         if (node.recordComponents != null && !node.recordComponents.isEmpty()) return node.recordComponents;
-        return node.fields.stream()
+        final List<RecordComponentNode> fields = node.fields.stream()
                 .filter(field -> (field.access & Opcodes.ACC_STATIC) == 0)
                 .filter(field -> (field.access & Opcodes.ACC_FINAL) != 0)
                 .map(field -> new RecordComponentNode(field.name, field.desc, field.signature))
                 .toList();
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("<init>") || Type.getArgumentTypes(method.desc).length != fields.size()) continue;
+            final Map<String, RecordComponentNode> byName = fields.stream()
+                    .collect(java.util.stream.Collectors.toMap(component -> component.name,
+                            java.util.function.Function.identity()));
+            final List<RecordComponentNode> assigned = new ArrayList<>();
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+                        && field.owner.equals(node.name)) {
+                    final RecordComponentNode component = byName.get(field.name);
+                    if (component != null && !assigned.contains(component)) assigned.add(component);
+                }
+            }
+            if (assigned.size() == fields.size()) return List.copyOf(assigned);
+        }
+        return fields;
     }
 
     private static String objectType(String descriptor) {
@@ -1385,7 +1513,8 @@ final class PacketMigrationScanner {
         BYTE_ARRAY_BIT_SET,
         REORDERED_BOOLEAN_ENUM,
         LINEAR_POSITION_PATH,
-        APPENDED_BOOLEAN
+        APPENDED_BOOLEAN,
+        MOVED_NESTED_FLOATS
     }
 
     record Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
@@ -1422,6 +1551,10 @@ final class PacketMigrationScanner {
 
         static Migration appendedBoolean(List<Integer> path, boolean defaultValue) {
             return new Migration(null, Kind.APPENDED_BOOLEAN, path, Map.of(), "", -1, -1, defaultValue, -1, -1);
+        }
+
+        static Migration movedNestedFloats(List<Integer> path) {
+            return new Migration(null, Kind.MOVED_NESTED_FLOATS, path, Map.of(), "", -1, -1, false, -1, -1);
         }
 
         Migration withPacket(PacketUpdater.RetainedPacket packet) {

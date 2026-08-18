@@ -223,6 +223,44 @@ class PacketMigrationScannerTest {
     }
 
     @Test
+    void ordersLegacyFieldsByTheirCanonicalConstructor() throws Exception {
+        final List<Component> components = List.of(component("first", "Ljava/lang/String;", null),
+                component("second", "I", null));
+        final Path baseline = jar(Map.of(RECORD, legacyFieldOrderClass()));
+        final Path target = jar(Map.of(RECORD, recordClass(components, false)));
+
+        assertEquals(List.of(), scan(baseline, target));
+    }
+
+    @Test
+    void detectsNestedFloatPairMovedToCollectionWrapper() throws Exception {
+        final String holder = "synthetic/wire/Holder";
+        final String wrapper = "synthetic/wire/PositionedHolder";
+        final String display = "synthetic/wire/Display";
+        final List<Component> rootBefore = List.of(component("values", "Ljava/util/List;",
+                "Ljava/util/List<L" + holder + ";>;"));
+        final List<Component> rootAfter = List.of(component("values", "Ljava/util/List;",
+                "Ljava/util/List<L" + wrapper + ";>;"));
+        final List<Component> holderComponents = List.of(component("display", "L" + display + ";", null));
+        final List<Component> wrapperComponents = List.of(component("value", "L" + holder + ";", null),
+                component("x", "F", null), component("y", "F", null));
+        final Map<String, byte[]> baseline = new LinkedHashMap<>();
+        baseline.put(RECORD, recordClass(rootBefore, false));
+        baseline.put(holder, compositeCodecRecord(holder, holderComponents));
+        baseline.put(display, manualPositionClass(display, true));
+        final Map<String, byte[]> target = new LinkedHashMap<>();
+        target.put(RECORD, recordClass(rootAfter, false));
+        target.put(holder, compositeCodecRecord(holder, holderComponents));
+        target.put(wrapper, compositeCodecRecord(wrapper, wrapperComponents));
+        target.put(display, manualPositionClass(display, false));
+
+        final PacketMigrationScanner.Migration migration = scan(jar(baseline), jar(target)).getFirst();
+
+        assertEquals(PacketMigrationScanner.Kind.MOVED_NESTED_FLOATS, migration.kind());
+        assertEquals(List.of(0), migration.path());
+    }
+
+    @Test
     void acceptsBooleanToBinaryEnumOnlyForProvenEquivalentPolarity() throws Exception {
         final String side = "synthetic/wire/Direction";
         final List<Component> baselineComponents = List.of(component("anchor", "Lsynthetic/wire/Anchor;", null),
@@ -363,6 +401,107 @@ class PacketMigrationScannerTest {
             clinit.visitMaxs(2, 0);
             clinit.visitEnd();
         }
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] legacyFieldOrderClass() {
+        final var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, RECORD, null,
+                "java/lang/Object", null);
+        writer.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "second", "I", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "first", "Ljava/lang/String;", null, null)
+                .visitEnd();
+        final MethodVisitor constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>",
+                "(Ljava/lang/String;I)V", null, null);
+        constructor.visitCode();
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitVarInsn(Opcodes.ALOAD, 1);
+        constructor.visitFieldInsn(Opcodes.PUTFIELD, RECORD, "first", "Ljava/lang/String;");
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitVarInsn(Opcodes.ILOAD, 2);
+        constructor.visitFieldInsn(Opcodes.PUTFIELD, RECORD, "second", "I");
+        constructor.visitInsn(Opcodes.RETURN);
+        constructor.visitMaxs(2, 3);
+        constructor.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] compositeCodecRecord(String owner, List<Component> components) {
+        final var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_RECORD,
+                owner, null, "java/lang/Record", null);
+        components.forEach(component -> writer.visitRecordComponent(
+                component.name(), component.descriptor(), component.signature()).visitEnd());
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL,
+                "STREAM_CODEC", STREAM_CODEC, null, null).visitEnd();
+        final MethodVisitor clinit = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        clinit.visitCode();
+        for (Component component : components) {
+            if (component.descriptor().equals("F")) {
+                clinit.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/network/codec/ByteBufCodecs",
+                        "FLOAT", STREAM_CODEC);
+            } else {
+                clinit.visitFieldInsn(Opcodes.GETSTATIC,
+                        org.objectweb.asm.Type.getType(component.descriptor()).getInternalName(),
+                        "STREAM_CODEC", STREAM_CODEC);
+            }
+            clinit.visitInvokeDynamicInsn("apply", "()Ljava/util/function/Function;",
+                    new Handle(Opcodes.H_INVOKESTATIC, "synthetic/bootstrap/Factory", "bootstrap", "()V", false),
+                    new Handle(Opcodes.H_INVOKEVIRTUAL, owner, component.name(),
+                            "()" + component.descriptor(), false));
+        }
+        clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraft/network/codec/StreamCodec",
+                "composite", "()" + STREAM_CODEC, false);
+        clinit.visitFieldInsn(Opcodes.PUTSTATIC, owner, "STREAM_CODEC", STREAM_CODEC);
+        clinit.visitInsn(Opcodes.RETURN);
+        clinit.visitMaxs(components.size() * 2 + 1, 0);
+        clinit.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] manualPositionClass(String owner, boolean positioned) {
+        final var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, owner, null,
+                "java/lang/Object", null);
+        if (positioned) {
+            writer.visitField(Opcodes.ACC_PRIVATE, "x", "F", null, null).visitEnd();
+            writer.visitField(Opcodes.ACC_PRIVATE, "y", "F", null, null).visitEnd();
+        }
+        final MethodVisitor write = writer.visitMethod(Opcodes.ACC_PRIVATE, "write",
+                "(Lnet/minecraft/network/FriendlyByteBuf;)V", null, null);
+        write.visitCode();
+        if (positioned) {
+            for (String name : List.of("x", "y")) {
+                write.visitVarInsn(Opcodes.ALOAD, 1);
+                write.visitVarInsn(Opcodes.ALOAD, 0);
+                write.visitFieldInsn(Opcodes.GETFIELD, owner, name, "F");
+                write.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/FriendlyByteBuf",
+                        "writeFloat", "(F)Lnet/minecraft/network/FriendlyByteBuf;", false);
+                write.visitInsn(Opcodes.POP);
+            }
+        }
+        write.visitInsn(Opcodes.RETURN);
+        write.visitMaxs(2, 2);
+        write.visitEnd();
+        final MethodVisitor read = writer.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "read",
+                "(Lnet/minecraft/network/FriendlyByteBuf;)V", null, null);
+        read.visitCode();
+        if (positioned) {
+            for (int index = 0; index < 2; index++) {
+                read.visitVarInsn(Opcodes.ALOAD, 0);
+                read.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/FriendlyByteBuf",
+                        "readFloat", "()F", false);
+                read.visitInsn(Opcodes.POP);
+            }
+        }
+        read.visitInsn(Opcodes.RETURN);
+        read.visitMaxs(1, 1);
+        read.visitEnd();
         writer.visitEnd();
         return writer.toByteArray();
     }

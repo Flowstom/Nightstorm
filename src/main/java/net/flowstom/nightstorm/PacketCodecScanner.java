@@ -94,6 +94,16 @@ final class PacketCodecScanner {
         if (owner.equals("net/minecraft/core/UUIDUtil") && fieldName.equals("STREAM_CODEC")) {
             return new CodecType("java.util.UUID", "NetworkBuffer.UUID", "UUIDUtil.STREAM_CODEC", "Ljava/util/UUID;", true);
         }
+        if (owner.equals("net/minecraft/world/InteractionHand") && fieldName.equals("STREAM_CODEC")) {
+            return new CodecType("net.minestom.server.entity.PlayerHand", "NetworkBuffer.Enum(PlayerHand.class)",
+                    "InteractionHand.STREAM_CODEC", "Lnet/minecraft/world/InteractionHand;", true);
+        }
+        if (owner.equals("net/minecraft/world/item/component/SwingAnimation")
+                && fieldName.equals("STREAM_CODEC")) {
+            return new CodecType("net.minestom.server.item.component.SwingAnimation",
+                    "SwingAnimation.NETWORK_TYPE", "SwingAnimation.STREAM_CODEC",
+                    "Lnet/minecraft/world/item/component/SwingAnimation;", true);
+        }
         if (owner.equals("net/minecraft/network/codec/ByteBufCodecs")) {
             return switch (fieldName) {
                 case "BOOL" -> primitive("boolean", "BOOLEAN", fieldName, "Z");

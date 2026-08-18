@@ -42,6 +42,10 @@ final class RetainedPacketMigrator {
         final Map<SerializerSlot, PlannedEdit> edits = new LinkedHashMap<>();
         for (PacketMigrationScanner.Migration migration : migrations) {
             final ResolvedType packetType = sources.resolveUnique(migration.packet().className());
+            if (migration.kind() == PacketMigrationScanner.Kind.MOVED_NESTED_FLOATS) {
+                planMovedNestedFloats(sources, edits, packetType, migration);
+                continue;
+            }
             if (migration.kind() != PacketMigrationScanner.Kind.OPTIONAL_ENUM
                     && migration.kind() != PacketMigrationScanner.Kind.BYTE_ARRAY_BIT_SET) {
                 planSemanticMigration(sources, edits, packetType, migration);
@@ -124,7 +128,8 @@ final class RetainedPacketMigrator {
             case REORDERED_BOOLEAN_ENUM -> reorderedBooleanSerializer(sources, packetType, current, migration);
             case LINEAR_POSITION_PATH -> linearPositionSerializer(sources, packetType, current, migration);
             case APPENDED_BOOLEAN -> appendedBooleanSerializer(sources, packetType, current, migration.defaultValue());
-            case OPTIONAL_ENUM, BYTE_ARRAY_BIT_SET -> throw new IllegalStateException("Unexpected leaf migration");
+            case OPTIONAL_ENUM, BYTE_ARRAY_BIT_SET, MOVED_NESTED_FLOATS ->
+                    throw new IllegalStateException("Unexpected leaf migration");
         };
         final SerializerSlot slot = new SerializerSlot(resolved.field().source(), resolved.field().owner(),
                 resolved.field().name(), List.of());
@@ -135,6 +140,186 @@ final class RetainedPacketMigrator {
         if (previous != null && !previous.semantic().equals(edit.semantic())) {
             throw new IllegalStateException("Conflicting whole-payload migrations for " + packetType.qualifiedName());
         }
+    }
+
+    private static void planMovedNestedFloats(SourceIndex sources, Map<SerializerSlot, PlannedEdit> edits,
+                                               ResolvedType packetType,
+                                               PacketMigrationScanner.Migration migration) {
+        if (migration.path().size() != 1) {
+            throw new IllegalStateException("Moved nested float migration requires one collection component path");
+        }
+        final ResolvedType mappingType = sources.recordListElementType(packetType, migration.path().getFirst());
+        final RecordDeclaration mapping = requireRecord(mappingType);
+        if (mapping.getParameters().size() != 2) {
+            throw new IllegalStateException("Positioned collection element must be a two-component source record");
+        }
+        final int nestedIndex = 1;
+        final ResolvedType nestedType = sources.recordComponentType(mappingType, nestedIndex, false);
+        final RecordDeclaration nested = requireRecord(nestedType);
+        int positionedIndex = -1;
+        ResolvedType positionedType = null;
+        for (int index = 0; index < nested.getParameters().size(); index++) {
+            final Parameter parameter = nested.getParameter(index);
+            if (!(parameter.getType() instanceof ClassOrInterfaceType)) continue;
+            final ResolvedType candidate;
+            try {
+                candidate = sources.recordComponentType(nestedType, index, false);
+            } catch (IllegalStateException ignored) {
+                continue;
+            }
+            if (!(candidate.declaration() instanceof RecordDeclaration record) || record.getParameters().size() < 2) {
+                continue;
+            }
+            final int firstFloat = record.getParameters().size() - 2;
+            if (isFloat(record.getParameter(firstFloat)) && isFloat(record.getParameter(firstFloat + 1))) {
+                if (positionedType != null) {
+                    throw new IllegalStateException("Nested source record has multiple trailing float-pair components");
+                }
+                positionedIndex = index;
+                positionedType = candidate;
+            }
+        }
+        if (positionedType == null) {
+            throw new IllegalStateException("Unable to locate nested source record containing the moved float pair");
+        }
+        final RecordDeclaration positioned = requireRecord(positionedType);
+        final int firstFloat = positioned.getParameters().size() - 2;
+        final ResolvedExpression mappingSerializer = sources.field(mappingType, "SERIALIZER");
+        final ResolvedExpression positionedSerializer = sources.field(positionedType, "SERIALIZER");
+        final Expression mappingReplacement = positionedCollectionSerializer(sources, mappingType, mapping,
+                nestedType, nested, nestedIndex, positionedType, positioned, positionedIndex, firstFloat,
+                mappingSerializer.expression());
+        final Expression positionedReplacement = serializerWithoutTrailingFloats(sources, positionedType,
+                positioned, positionedSerializer.expression(), firstFloat);
+        final String semantic = semanticKey(migration);
+        addEdit(edits, mappingSerializer, mappingReplacement, semantic);
+        addEdit(edits, positionedSerializer, positionedReplacement, semantic);
+    }
+
+    private static void addEdit(Map<SerializerSlot, PlannedEdit> edits, ResolvedExpression resolved,
+                                Expression replacement, String semantic) {
+        if (resolved.field() == null) throw new IllegalStateException("Migrated serializer is not backed by a field");
+        final SerializerSlot slot = new SerializerSlot(resolved.field().source(), resolved.field().owner(),
+                resolved.field().name(), List.of());
+        final PlannedEdit edit = new PlannedEdit(resolved.expression(), replacement, semantic, List.of());
+        final PlannedEdit previous = edits.putIfAbsent(slot, edit);
+        if (previous != null && !previous.semantic().equals(semantic)) {
+            throw new IllegalStateException("Conflicting moved-float migrations for " + resolved.field().owner());
+        }
+    }
+
+    private static Expression positionedCollectionSerializer(SourceIndex sources, ResolvedType mappingType,
+                                                               RecordDeclaration mapping, ResolvedType nestedType,
+                                                               RecordDeclaration nested, int nestedIndex,
+                                                               ResolvedType positionedType,
+                                                               RecordDeclaration positioned, int positionedIndex,
+                                                               int firstFloat, Expression current) {
+        if (current.toString().contains("positionCompatibilityDelegate")) return current.clone();
+        final String mappingName = mapping.getNameAsString();
+        final String nestedName = nested.getNameAsString();
+        final String positionedName = positioned.getNameAsString();
+        final String nestedComponent = mapping.getParameter(nestedIndex).getNameAsString();
+        final String positionedComponent = nested.getParameter(positionedIndex).getNameAsString();
+        final String firstName = positioned.getParameter(firstFloat).getNameAsString();
+        final String secondName = positioned.getParameter(firstFloat + 1).getNameAsString();
+        final String adjustedPosition = constructor(positionedName, positioned, "positionedValue",
+                Map.of(firstFloat, "position0", firstFloat + 1, "position1"));
+        final String adjustedNested = constructor(nestedName, nested, "nestedValue",
+                Map.of(positionedIndex, "adjustedPosition"));
+        final String adjustedMapping = constructor(mappingName, mapping, "value",
+                Map.of(nestedIndex, "adjustedNested"));
+        return sources.parseExpression("""
+                new NetworkBuffer.Type<%s>() {
+                    private final NetworkBuffer.Type<%s> positionCompatibilityDelegate = %s;
+
+                    @Override
+                    public void write(NetworkBuffer buffer, %s value) {
+                        positionCompatibilityDelegate.write(buffer, value);
+                        var positionedValue = value.%s().%s();
+                        buffer.write(NetworkBuffer.FLOAT, positionedValue == null ? 0.0f : positionedValue.%s());
+                        buffer.write(NetworkBuffer.FLOAT, positionedValue == null ? 0.0f : positionedValue.%s());
+                    }
+
+                    @Override
+                    public %s read(NetworkBuffer buffer) {
+                        var value = positionCompatibilityDelegate.read(buffer);
+                        float position0 = buffer.read(NetworkBuffer.FLOAT);
+                        float position1 = buffer.read(NetworkBuffer.FLOAT);
+                        var nestedValue = value.%s();
+                        var positionedValue = nestedValue.%s();
+                        if (positionedValue == null) return value;
+                        var adjustedPosition = %s;
+                        var adjustedNested = %s;
+                        return %s;
+                    }
+                }
+                """.formatted(mappingName, mappingName, current, mappingName, nestedComponent,
+                positionedComponent, firstName, secondName, mappingName, nestedComponent, positionedComponent,
+                adjustedPosition, adjustedNested, adjustedMapping), "positioned collection serializer");
+    }
+
+    private static Expression serializerWithoutTrailingFloats(SourceIndex sources, ResolvedType owner,
+                                                               RecordDeclaration record, Expression current,
+                                                               int firstFloat) {
+        final ObjectCreationExpr replacement = current.clone().toObjectCreationExpr()
+                .orElseThrow(() -> new IllegalStateException("Moved float pair requires a custom serializer in "
+                        + owner.qualifiedName()));
+        final Set<String> names = Set.of(record.getParameter(firstFloat).getNameAsString(),
+                record.getParameter(firstFloat + 1).getNameAsString());
+        final List<MethodCallExpr> writes = replacement.findAll(MethodCallExpr.class).stream()
+                .filter(call -> call.getNameAsString().equals("write") && call.getArguments().size() == 2)
+                .filter(call -> terminalName(call.getArgument(0)).equals("FLOAT"))
+                .filter(call -> names.stream().anyMatch(name -> isAccessor(call.getArgument(1), "value", name)))
+                .toList();
+        writes.forEach(call -> call.findAncestor(com.github.javaparser.ast.stmt.ExpressionStmt.class)
+                .orElseThrow(() -> new IllegalStateException("FLOAT write is not a statement in "
+                        + owner.qualifiedName())).remove());
+        final List<VariableDeclarator> reads = replacement.findAll(VariableDeclarator.class).stream()
+                .filter(variable -> names.contains(variable.getNameAsString()))
+                .filter(variable -> variable.getInitializer().flatMap(Expression::toMethodCallExpr)
+                        .filter(call -> call.getNameAsString().equals("read") && call.getArguments().size() == 1)
+                        .filter(call -> terminalName(call.getArgument(0)).equals("FLOAT")).isPresent())
+                .toList();
+        reads.forEach(variable -> variable.findAncestor(com.github.javaparser.ast.stmt.ExpressionStmt.class)
+                .orElseThrow(() -> new IllegalStateException("FLOAT read is not a statement in "
+                        + owner.qualifiedName())).remove());
+        final List<ObjectCreationExpr> constructors = replacement.findAll(ObjectCreationExpr.class).stream()
+                .filter(creation -> creation.getType().getNameAsString().equals(record.getNameAsString()))
+                .filter(creation -> creation.getArguments().size() == record.getParameters().size()).toList();
+        if (constructors.size() != 1) {
+            throw new IllegalStateException("Unable to locate positioned value construction in " + owner.qualifiedName());
+        }
+        final ObjectCreationExpr constructor = constructors.getFirst();
+        final boolean alreadyMigrated = writes.isEmpty() && reads.isEmpty()
+                && constructor.getArgument(firstFloat).toString().matches("0(?:\\.0)?[fF]?")
+                && constructor.getArgument(firstFloat + 1).toString().matches("0(?:\\.0)?[fF]?");
+        if (!alreadyMigrated && (writes.size() != 2 || reads.size() != 2)) {
+            throw new IllegalStateException("Expected two trailing FLOAT reads and writes in " + owner.qualifiedName());
+        }
+        constructor.setArgument(firstFloat, sources.parseExpression("0.0f", "position placeholder"));
+        constructor.setArgument(firstFloat + 1, sources.parseExpression("0.0f", "position placeholder"));
+        return sources.parseExpression(replacement.toString(), "serializer without nested positions");
+    }
+
+    private static boolean isAccessor(Expression expression, String receiver, String name) {
+        final String value = expression.toString().replace("()", "");
+        return value.equals(receiver + '.' + name);
+    }
+
+    private static boolean isFloat(Parameter parameter) {
+        return parameter.getType().isPrimitiveType()
+                && parameter.getType().asPrimitiveType().getType()
+                == com.github.javaparser.ast.type.PrimitiveType.Primitive.FLOAT;
+    }
+
+    private static String constructor(String type, RecordDeclaration record, String receiver,
+                                      Map<Integer, String> replacements) {
+        final List<String> arguments = new ArrayList<>();
+        for (int index = 0; index < record.getParameters().size(); index++) {
+            arguments.add(replacements.getOrDefault(index,
+                    receiver + '.' + record.getParameter(index).getNameAsString() + "()"));
+        }
+        return "new " + type + '(' + String.join(", ", arguments) + ')';
     }
 
     private static Expression reorderedBooleanSerializer(SourceIndex sources, ResolvedType packetType,
@@ -540,6 +725,18 @@ final class RetainedPacketMigrator {
             return resolveType(type.getNameWithScope(), owner);
         }
 
+        private ResolvedType recordListElementType(ResolvedType owner, int ordinal) {
+            final Parameter parameter = recordComponent(owner, ordinal);
+            if (!(parameter.getType() instanceof ClassOrInterfaceType type)
+                    || !type.getNameAsString().equals("List") || type.getTypeArguments().isEmpty()
+                    || type.getTypeArguments().orElseThrow().size() != 1
+                    || !(type.getTypeArguments().orElseThrow().get(0) instanceof ClassOrInterfaceType element)) {
+                throw new IllegalStateException("Record component " + ordinal + " in " + owner.qualifiedName()
+                        + " is not a List of source records");
+            }
+            return resolveType(element.getNameWithScope(), owner);
+        }
+
         private Parameter recordComponent(ResolvedType owner, int ordinal) {
             if (!(owner.declaration() instanceof RecordDeclaration record) || record.getParameters().size() <= ordinal) {
                 throw new IllegalStateException(owner.qualifiedName() + " is not a record with component " + ordinal);
@@ -663,9 +860,29 @@ final class RetainedPacketMigrator {
         private void writeChanged() throws IOException {
             for (ParsedSource source : parsed.values()) {
                 if (source.unit().getTokenRange().map(range -> range.getBegin().getText()).isEmpty()) continue;
-                final String printed = LexicalPreservingPrinter.print(source.unit());
+                final String printed = removeUnusedImports(LexicalPreservingPrinter.print(source.unit()));
                 if (!printed.equals(Files.readString(source.path()))) Files.writeString(source.path(), printed);
             }
+        }
+
+        private static String removeUnusedImports(String source) {
+            final java.util.regex.Pattern imports = java.util.regex.Pattern.compile(
+                    "(?m)^import\\s+(?:static\\s+)?([\\w.]+);(?:\\R|$)");
+            final String body = imports.matcher(source).replaceAll("");
+            final java.util.regex.Matcher matcher = imports.matcher(source);
+            final StringBuilder result = new StringBuilder();
+            while (matcher.find()) {
+                final String qualified = matcher.group(1);
+                final String simple = qualified.substring(qualified.lastIndexOf('.') + 1);
+                if (java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(simple) + "\\b")
+                        .matcher(body).find()) {
+                    matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(matcher.group()));
+                } else {
+                    matcher.appendReplacement(result, "");
+                }
+            }
+            matcher.appendTail(result);
+            return result.toString();
         }
 
         private static boolean isNullable(Parameter parameter) {

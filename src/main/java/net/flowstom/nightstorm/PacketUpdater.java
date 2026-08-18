@@ -17,6 +17,8 @@ final class PacketUpdater {
     private static final Pattern REGISTRY_START = Pattern.compile("\\b(CLIENT|SERVER)_(HANDSHAKE|STATUS|LOGIN|CONFIGURATION|PLAY)\\b");
     private static final Pattern ENTRY = Pattern.compile("^(\\s*)entry\\((\\w+)\\.class,\\s*(.+)\\)(,?)$");
     private static final Pattern QUALIFIED_TYPE = Pattern.compile("(?:[a-z_][\\w$]*\\.)+[A-Z][\\w$]*");
+    private static final Pattern EXPLICIT_IMPORT = Pattern.compile(
+            "(?m)^import\\s+(?:static\\s+)?([\\w.]+);(?:\\R|$)");
 
     private PacketUpdater() {
     }
@@ -130,10 +132,14 @@ final class PacketUpdater {
             final String firstServerImport = "import net.minestom.server.network.packet.server.";
             final int importIndex = updatedSource.indexOf(firstServerImport);
             if (importIndex < 0) throw new IllegalStateException("Unable to locate server packet imports");
+            final String generatedImports = generatedPackets.stream().map(GeneratedPacket::className).distinct()
+                    .sorted().map(name -> "import net.minestom.server.network.packet.nightstorm." + name + ";\n")
+                    .collect(java.util.stream.Collectors.joining());
             updatedSource = updatedSource.substring(0, importIndex)
-                    + "import net.minestom.server.network.packet.nightstorm.*;\n"
+                    + generatedImports
                     + updatedSource.substring(importIndex);
         }
+        updatedSource = removeUnusedImports(updatedSource);
         Files.writeString(packetVanilla, updatedSource);
         final Path generatedDirectory = sourceRoot.resolve("src/main/java/net/minestom/server/network/packet/nightstorm");
         Files.createDirectories(generatedDirectory);
@@ -367,6 +373,23 @@ final class PacketUpdater {
 
     private static String removeFinalExtraNewline(String value) {
         return value.endsWith("\n\n") ? value.substring(0, value.length() - 1) : value;
+    }
+
+    private static String removeUnusedImports(String source) {
+        final String body = EXPLICIT_IMPORT.matcher(source).replaceAll("");
+        final Matcher matcher = EXPLICIT_IMPORT.matcher(source);
+        final StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            final String qualified = matcher.group(1);
+            final String simple = qualified.substring(qualified.lastIndexOf('.') + 1);
+            if (Pattern.compile("\\b" + Pattern.quote(simple) + "\\b").matcher(body).find()) {
+                matcher.appendReplacement(result, Matcher.quoteReplacement(matcher.group()));
+            } else {
+                matcher.appendReplacement(result, "");
+            }
+        }
+        matcher.appendTail(result);
+        return result.toString();
     }
 
     record UpdateResult(int packets, int generatedPackets, List<String> warnings) {

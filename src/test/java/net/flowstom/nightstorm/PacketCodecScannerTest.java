@@ -5,6 +5,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 import java.nio.file.Files;
+import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -46,5 +47,45 @@ class PacketCodecScannerTest {
         assertEquals("effects", shape.fields().getFirst().name());
         assertEquals("java.util.List<net.kyori.adventure.key.Key>", shape.fields().getFirst().javaType());
         assertEquals("NetworkBuffer.KEY.list()", shape.fields().getFirst().networkType());
+    }
+
+    @Test
+    void translatesSwingAnimationPacketUsingMinestomTypes() throws Exception {
+        final var jar = Files.createTempFile("nightstorm-swing-codec", ".jar");
+        final String owner = "net/minecraft/network/protocol/game/ClientboundSwingAnimationPacket";
+        final var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_RECORD,
+                owner, null, "java/lang/Record", null);
+        writer.visitRecordComponent("entityId", "I", null).visitEnd();
+        writer.visitRecordComponent("hand", "Lnet/minecraft/world/InteractionHand;", null).visitEnd();
+        writer.visitRecordComponent("animation",
+                "Lnet/minecraft/world/item/component/SwingAnimation;", null).visitEnd();
+        final var clinit = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        clinit.visitCode();
+        clinit.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/network/codec/ByteBufCodecs",
+                "VAR_INT", "Lnet/minecraft/network/codec/StreamCodec;");
+        clinit.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/world/InteractionHand",
+                "STREAM_CODEC", "Lnet/minecraft/network/codec/StreamCodec;");
+        clinit.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/world/item/component/SwingAnimation",
+                "STREAM_CODEC", "Lnet/minecraft/network/codec/StreamCodec;");
+        clinit.visitInsn(Opcodes.RETURN);
+        clinit.visitMaxs(3, 0);
+        clinit.visitEnd();
+        writer.visitEnd();
+        try (var output = new JarOutputStream(Files.newOutputStream(jar))) {
+            output.putNextEntry(new JarEntry(owner + ".class"));
+            output.write(writer.toByteArray());
+            output.closeEntry();
+        }
+
+        final var shape = PacketCodecScanner.scan(jar, owner.replace('/', '.'));
+
+        assertFalse(shape.opaque());
+        assertEquals(List.of("int", "net.minestom.server.entity.PlayerHand",
+                        "net.minestom.server.item.component.SwingAnimation"),
+                shape.fields().stream().map(PacketCodecScanner.PacketField::javaType).toList());
+        assertEquals(List.of("NetworkBuffer.VAR_INT", "NetworkBuffer.Enum(PlayerHand.class)",
+                        "SwingAnimation.NETWORK_TYPE"),
+                shape.fields().stream().map(PacketCodecScanner.PacketField::networkType).toList());
     }
 }

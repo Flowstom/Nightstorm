@@ -266,6 +266,73 @@ class RetainedPacketMigratorTest {
         assertTrue(!migrated.contains("NetworkBuffer.BITSET, SectionData::"));
     }
 
+    @Test
+    void movesNestedDisplayPositionsToCollectionEntries() throws Exception {
+        final Path root = sourceRoot();
+        final Path source = root.resolve("src/main/java/example/AdvancementEnvelope.java");
+        write(source, """
+                package example;
+
+                import org.jetbrains.annotations.Nullable;
+
+                import java.util.List;
+
+                record AdvancementEnvelope(boolean reset, List<Mapping> mappings) {
+                    static final NetworkBuffer.Type<AdvancementEnvelope> SERIALIZER = NetworkBufferTemplate.template(
+                            NetworkBuffer.BOOLEAN, AdvancementEnvelope::reset,
+                            Mapping.SERIALIZER.list(), AdvancementEnvelope::mappings,
+                            AdvancementEnvelope::new);
+
+                    record Mapping(String key, Value value) {
+                        static final NetworkBuffer.Type<Mapping> SERIALIZER = NetworkBufferTemplate.template(
+                                NetworkBuffer.STRING, Mapping::key,
+                                Value.SERIALIZER, Mapping::value,
+                                Mapping::new);
+                    }
+
+                    record Value(@Nullable Display display) {
+                        static final NetworkBuffer.Type<Value> SERIALIZER = NetworkBufferTemplate.template(
+                                Display.SERIALIZER.optional(), Value::display, Value::new);
+                    }
+
+                    record Display(String title, float x, float y) {
+                        static final NetworkBuffer.Type<Display> SERIALIZER = new NetworkBuffer.Type<>() {
+                            public void write(NetworkBuffer buffer, Display value) {
+                                buffer.write(NetworkBuffer.STRING, value.title);
+                                buffer.write(NetworkBuffer.FLOAT, value.x);
+                                buffer.write(NetworkBuffer.FLOAT, value.y);
+                            }
+
+                            public Display read(NetworkBuffer buffer) {
+                                var title = buffer.read(NetworkBuffer.STRING);
+                                var x = buffer.read(NetworkBuffer.FLOAT);
+                                var y = buffer.read(NetworkBuffer.FLOAT);
+                                return new Display(title, x, y);
+                            }
+                        };
+                    }
+                }
+                """);
+        final PacketMigrationScanner.Migration migration = new PacketMigrationScanner.Migration(
+                new PacketUpdater.RetainedPacket("AdvancementEnvelope", "AdvancementEnvelope.SERIALIZER",
+                        "before", "after"),
+                PacketMigrationScanner.Kind.MOVED_NESTED_FLOATS, List.of(1), Map.of(), "", -1, -1, false);
+
+        RetainedPacketMigrator.apply(root, List.of(migration));
+        final String migrated = Files.readString(source);
+        RetainedPacketMigrator.apply(root, List.of(migration));
+
+        assertEquals(migrated, Files.readString(source));
+        assertTrue(migrated.contains("positionCompatibilityDelegate"));
+        assertTrue(migrated.contains("import org.jetbrains.annotations.Nullable;"));
+        assertTrue(migrated.contains("positionedValue == null ? 0.0f : positionedValue.x()"));
+        assertTrue(migrated.contains("new Display(positionedValue.title(), position0, position1)"));
+        assertTrue(migrated.contains("return new Mapping(value.key(), adjustedNested)"));
+        assertTrue(!migrated.contains("buffer.write(NetworkBuffer.FLOAT, value.x)"));
+        assertTrue(!migrated.contains("var x = buffer.read(NetworkBuffer.FLOAT)"));
+        assertTrue(migrated.contains("new Display(title, 0.0f, 0.0f)"));
+    }
+
     private static Path sourceRoot() throws Exception {
         final Path root = Files.createTempDirectory("retained-packet-migrator");
         Files.createDirectories(root.resolve("src/main/java/example"));
