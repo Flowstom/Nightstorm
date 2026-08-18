@@ -69,19 +69,25 @@ jq -n \
   > "$target_directory/.nightstorm/manifest.json"
 
 cat > "$target_directory/.nightstorm/publish.gradle" <<'EOF'
-allprojects { project ->
-    project.plugins.withId("maven-publish") {
-        project.publishing {
-            repositories {
-                maven {
-                    name = "NightstormPages"
-                    url = uri(System.getenv("NIGHTSTORM_MAVEN_DIRECTORY"))
-                }
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.plugins.signing.Sign
+
+// Configure each project from its own beforeProject callback. Using allprojects and
+// reaching into subprojects from the root project is incompatible with Gradle's
+// configuration cache.
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin("maven-publish") {
+        def publishing = project.extensions.getByType(PublishingExtension)
+        publishing.repositories {
+            maven {
+                name = "NightstormPages"
+                url = project.uri(System.getenv("NIGHTSTORM_MAVEN_DIRECTORY"))
             }
         }
-        if (project == rootProject) {
+        if (project.parent == null) {
             def nightstormVersion = System.getenv("NIGHTSTORM_VERSION")
-            project.publishing.publications.create("nightstormData", org.gradle.api.publish.maven.MavenPublication) {
+            publishing.publications.create("nightstormData", MavenPublication) {
                 groupId = "net.flowstom"
                 artifactId = "nightstorm-data"
                 version = nightstormVersion
@@ -94,21 +100,17 @@ allprojects { project ->
             project.configurations.named("runtimeElements") {
                 extendsFrom(publishedData)
             }
+            publishing.publications.withType(MavenPublication).configureEach {
+                if (name == "maven") {
+                    groupId = "net.flowstom"
+                    artifactId = "nightstorm"
+                    version = nightstormVersion
+                }
+            }
         }
     }
     project.tasks.withType(Sign).configureEach {
         enabled = false
-    }
-}
-
-gradle.projectsEvaluated {
-    if (rootProject.plugins.hasPlugin("maven-publish")) {
-        def nightstormVersion = System.getenv("NIGHTSTORM_VERSION")
-        rootProject.publishing.publications.named("maven", org.gradle.api.publish.maven.MavenPublication) {
-            groupId = "net.flowstom"
-            artifactId = "nightstorm"
-            version = nightstormVersion
-        }
     }
 }
 EOF
