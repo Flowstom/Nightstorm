@@ -10,7 +10,7 @@
   },
   "createdBy": {
     "gradle": {
-      "version": "9.7.0"
+      "version": "9.7.1"
     }
   },
   "variants": [
@@ -146,11 +146,11 @@
         {
           "name": "minestom-dev.jar",
           "url": "minestom-dev.jar",
-          "size": 4237400,
-          "sha512": "6b1427b872435cda428822560702f1651b43a4081d5c5996b0a758c8d54c2d911e4d11fe41c2726e712eed0233f032a3b327e41f20c494b2f16242c425e2ddf9",
-          "sha256": "eb657a134bf67ac27d4f24971913509c6665e803260bf3f14af3a6ff4252ef5f",
-          "sha1": "c7161179610364ec10df1fe50829b06aa4b7a9b8",
-          "md5": "2f4fed94528177d94c475039292b8515"
+          "size": 4254025,
+          "sha512": "fc625e532b3009c87562feb67fab134f9d7a7b4a2d07513ac2671097082b5aaf11662a6799582de4db991a9465c2dd02875dbe3530bfb35baa500e20c54157ba",
+          "sha256": "f389dd769b6adf0c6ade229e35c5707d67f69ef053116059f7fe47811d223c54",
+          "sha1": "666bba9fd180a3886983ddd58e911b620eb20b22",
+          "md5": "dac947e9bd1a0931aa0adc7c66efe384"
         }
       ]
     },
@@ -220,7 +220,7 @@
           "group": "org.jctools",
           "module": "jctools-core-jdk11",
           "version": {
-            "requires": "4.0.6"
+            "requires": "4.0.7"
           },
           "excludes": [
             {
@@ -350,7 +350,7 @@
           "group": "net.flowstom",
           "module": "nightstorm-data",
           "version": {
-            "requires": "2026.08.16-26.3-snapshot-9"
+            "requires": "2026.08.28-26.3-pre-2"
           },
           "excludes": [
             {
@@ -364,11 +364,11 @@
         {
           "name": "minestom-dev.jar",
           "url": "minestom-dev.jar",
-          "size": 4237400,
-          "sha512": "6b1427b872435cda428822560702f1651b43a4081d5c5996b0a758c8d54c2d911e4d11fe41c2726e712eed0233f032a3b327e41f20c494b2f16242c425e2ddf9",
-          "sha256": "eb657a134bf67ac27d4f24971913509c6665e803260bf3f14af3a6ff4252ef5f",
-          "sha1": "c7161179610364ec10df1fe50829b06aa4b7a9b8",
-          "md5": "2f4fed94528177d94c475039292b8515"
+          "size": 4254025,
+          "sha512": "fc625e532b3009c87562feb67fab134f9d7a7b4a2d07513ac2671097082b5aaf11662a6799582de4db991a9465c2dd02875dbe3530bfb35baa500e20c54157ba",
+          "sha256": "f389dd769b6adf0c6ade229e35c5707d67f69ef053116059f7fe47811d223c54",
+          "sha1": "666bba9fd180a3886983ddd58e911b620eb20b22",
+          "md5": "dac947e9bd1a0931aa0adc7c66efe384"
         }
       ]
     },
@@ -384,11 +384,11 @@
         {
           "name": "minestom-dev-sources.jar",
           "url": "minestom-dev-sources.jar",
-          "size": 1523321,
-          "sha512": "310b204237ff8c432b501b76d1966a14aa3bd13fb7d2687238594db96c3c08105f3a55a35ec0c58a40a81c42417a50d20eb994ea2692a7ef341efdebc169df53",
-          "sha256": "65afe44e1231b34ffb8736127d87a7daf8c5a786f8f7a0b95219e382d4f553c1",
-          "sha1": "34c29ccce5ae5dd80f7fc8e25b8b0be75c17e531",
-          "md5": "6fc912b9f3db221c3991c8f52242f0b8"
+          "size": 1527175,
+          "sha512": "67f5c4e28cc01ee8dc8eea2e74dc0793eab41750bb6353198f89721640b48f0755c77579b24f1f776ad1b9dbab48798244f5b2d6698b4315bfc17f09814e1f27",
+          "sha256": "8cb1718c46e3fcdc36241c391594dbf5aa1e87c659dc8712145af376af94a9e8",
+          "sha1": "fa74ad245fc1113dc18417fc531f274207f38613",
+          "md5": "0bffe2026151e5590d26f8d928aeeae3"
         }
       ]
     },
@@ -404,11 +404,11 @@
         {
           "name": "minestom-dev-javadoc.jar",
           "url": "minestom-dev-javadoc.jar",
-          "size": 14006775,
-          "sha512": "729b902a51c47f63fed264fa3881164b76454785c5feb08bf1464cc508a443b51fc13fb0929a040ca8ea6f3396de090347015e30bae5326cee25fecb7ed56c5a",
-          "sha256": "c85e09b4f4b6c4796de5f9f2ce820ac67fcf89f221e27201b8029855a65a5517",
-          "sha1": "087aa7990c10ec4b15d2f114f2945d6e9d9e8391",
-          "md5": "d489d3e08d05a7c5dccd01f04705305d"
+          "size": 14011036,
+          "sha512": "7b7730135dd9a0300ef7192107f1012fcda2de1765ba4bcfc379193911d0c0b41dae07ad26872b2818a5bf12294d10800da24a41f7a1cc52fc2d8502c2a9774f",
+          "sha256": "0c055ceba56cd8337e9b3bdcacb6d868fe43eb907403459501258b14f30a83c3",
+          "sha1": "53386232aa843f26e96eae018c6abb100c14f255",
+          "md5": "fc316a9121ea7c0d5bb16b78eb137920"
         }
       ]
     }
