@@ -57,8 +57,6 @@ tasks.withType<Javadoc> {
         if (!adventureVersion.endsWith("-SNAPSHOT")) {
             links("https://jd.papermc.io/adventure/${libs.versions.adventure.get()}/")
         }
-        links("https://javadoc.io/doc/com.google.code.gson/gson/${libs.versions.gson.get()}/")
-        links("https://javadoc.io/doc/org.jetbrains/annotations/${libs.versions.jetbrainsAnnotations.get()}/")
 
         tags("apiNote:a:API Note:", "implSpec:a:Implementation Requirements:", "implNote:a:Implementation Note:")
     }

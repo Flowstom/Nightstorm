@@ -17,7 +17,8 @@ public record ExplosionPacket(
         Particle particle, SoundEvent sound,
         WeightedList<BlockParticleInfo> blockParticles
 ) implements ServerPacket.Play {
-    public static final NetworkBuffer.Type<ExplosionPacket> SERIALIZER = NetworkBufferTemplate.template(
+    public static final NetworkBuffer.Type<ExplosionPacket> SERIALIZER = new NetworkBuffer.Type<ExplosionPacket>() {
+    private final NetworkBuffer.Type<ExplosionPacket> compatibilityDelegate = NetworkBufferTemplate.template(
             VECTOR3D, ExplosionPacket::center,
             NetworkBuffer.FLOAT, ExplosionPacket::radius,
             NetworkBuffer.INT, ExplosionPacket::blockCount,
@@ -26,6 +27,20 @@ public record ExplosionPacket(
             SoundEvent.NETWORK_TYPE, ExplosionPacket::sound,
             WeightedList.networkType(BlockParticleInfo.SERIALIZER), ExplosionPacket::blockParticles,
             ExplosionPacket::new);
+
+    @Override
+    public void write(NetworkBuffer buffer, ExplosionPacket value) {
+        compatibilityDelegate.write(buffer, value);
+        buffer.write(NetworkBuffer.BOOLEAN, true);
+    }
+
+    @Override
+    public ExplosionPacket read(NetworkBuffer buffer) {
+        var value = compatibilityDelegate.read(buffer);
+        buffer.read(NetworkBuffer.BOOLEAN);
+        return value;
+    }
+};
 
     public record BlockParticleInfo(Particle particle, float scaling, float speed) {
         public static final NetworkBuffer.Type<BlockParticleInfo> SERIALIZER = NetworkBufferTemplate.template(
