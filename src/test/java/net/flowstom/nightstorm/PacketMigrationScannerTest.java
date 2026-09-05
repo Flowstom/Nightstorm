@@ -24,6 +24,97 @@ class PacketMigrationScannerTest {
     private static final String STREAM_CODEC = "Lnet/minecraft/network/codec/StreamCodec;";
 
     @Test
+    void migratesTeleportPositionAndRejectsDifferentEncoding() throws Exception {
+        final String owner = "net/minecraft/network/protocol/game/ServerboundAcceptTeleportationPacket";
+        final List<String> before = List.of("id:I");
+        final List<String> after = List.of("id:I", "x:D", "y:D", "z:D", "yRot:F", "xRot:F");
+        final Path baseline = jar(Map.of(owner, snapshotPacket(owner, before, List.of("VarInt"), false)));
+        final Path target = jar(Map.of(owner, snapshotPacket(owner, after,
+                List.of("VAR_INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"), true)));
+        final var packet = new PacketUpdater.RetainedPacket("Teleport", "Teleport.SERIALIZER", owner, owner);
+        assertEquals(PacketMigrationScanner.Kind.TELEPORT_POSITION,
+                PacketMigrationScanner.scan(baseline, target, List.of(packet)).getFirst().kind());
+        final Path invalid = jar(Map.of(owner, snapshotPacket(owner, after,
+                List.of("INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"), true)));
+        assertThrows(IllegalStateException.class, () -> PacketMigrationScanner.scan(baseline, invalid, List.of(packet)));
+    }
+
+    @Test
+    void migratesParticleAxesWithDerivedDefaultAndRejectsChangedCountCodec() throws Exception {
+        final String owner = "net/minecraft/network/protocol/game/ClientboundLevelParticlesPacket";
+        final String particle = "particle:Lnet/minecraft/core/particles/ParticleOptions;";
+        final String mode = owner + "$RandomizationType";
+        final List<String> before = List.of(particle, "overrideLimiter:Z", "alwaysShow:Z", "x:D", "y:D", "z:D",
+                "xDist:F", "yDist:F", "zDist:F", "maxSpeed:F", "count:I");
+        final List<String> after = List.of(particle, "overrideLimiter:Z", "alwaysShow:Z", "x:D", "y:D", "z:D",
+                "xDist:F", "yDist:F", "zDist:F", "xMaxSpeed:F", "yMaxSpeed:F", "zMaxSpeed:F", "count:I",
+                "randomizationType:L" + mode + ";");
+        final Path baseline = jar(Map.of(owner, snapshotPacket(owner, before,
+                List.of("Boolean", "Boolean", "Double", "Double", "Double", "Float", "Float", "Float", "Float", "Int"), false)));
+        final List<String> codecs = new java.util.ArrayList<>(List.of("net/minecraft/core/particles/ParticleTypes#STREAM_CODEC",
+                "BOOL", "BOOL", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT",
+                "VAR_INT", mode + "#STREAM_CODEC"));
+        final var packet = new PacketUpdater.RetainedPacket("ParticlePacket", "ParticlePacket.SERIALIZER", owner, owner);
+        final byte[] enumBytes = binaryEnumClass(mode, "DEFAULT", 7, "ALTERNATIVE", 3);
+        final Path target = jar(Map.of(owner, snapshotPacket(owner, after, codecs, true), mode, enumBytes));
+        final var migration = PacketMigrationScanner.scan(baseline, target, List.of(packet)).getFirst();
+        assertEquals(PacketMigrationScanner.Kind.PARTICLE_AXES, migration.kind());
+        assertEquals(7, migration.discriminator());
+        codecs.set(12, "INT");
+        final Path invalid = jar(Map.of(owner, snapshotPacket(owner, after, codecs, true), mode, enumBytes));
+        assertThrows(IllegalStateException.class, () -> PacketMigrationScanner.scan(baseline, invalid, List.of(packet)));
+    }
+
+    private static byte[] snapshotPacket(String owner, List<String> fields, List<String> codecs, boolean composite) {
+        final var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_RECORD,
+                owner, null, "java/lang/Record", null);
+        for (String field : fields) {
+            final String[] parts = field.split(":", 2);
+            writer.visitRecordComponent(parts[0], parts[1], null).visitEnd();
+        }
+        final var method = writer.visitMethod(Opcodes.ACC_STATIC, composite ? "<clinit>" : "legacyCodec", "()V", null, null);
+        method.visitCode();
+        for (int i = 0; i < codecs.size(); i++) {
+            final String codec = codecs.get(i);
+            if (composite) {
+                final String[] reference = codec.contains("#") ? codec.split("#")
+                        : new String[]{"net/minecraft/network/codec/ByteBufCodecs", codec};
+                method.visitFieldInsn(Opcodes.GETSTATIC, reference[0], reference[1], STREAM_CODEC);
+                final String[] field = fields.get(i).split(":", 2);
+                method.visitInvokeDynamicInsn("apply", "()Ljava/util/function/Function;",
+                        new Handle(Opcodes.H_INVOKESTATIC, "synthetic/bootstrap/Factory", "bootstrap", "()V", false),
+                        new Handle(Opcodes.H_INVOKEVIRTUAL, owner, field[0], "()" + field[1], false));
+            } else {
+                for (String prefix : List.of("read", "write")) {
+                    method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/FriendlyByteBuf",
+                            prefix + codec, "()V", false);
+                }
+            }
+        }
+        if (composite) method.visitFieldInsn(Opcodes.PUTSTATIC, owner, "STREAM_CODEC", STREAM_CODEC);
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(32, 0);
+        method.visitEnd();
+        if (composite && fields.size() == 14) {
+            final var constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>",
+                    "(Lnet/minecraft/core/particles/ParticleOptions;ZZDDDFFFFI)V", null, null);
+            constructor.visitCode();
+            final int[] opcodes = {25, 25, 21, 21, 24, 24, 24, 23, 23, 23, 23, 23, 23, 21};
+            final int[] slots = {0, 1, 2, 3, 4, 6, 8, 10, 11, 12, 13, 13, 13, 14};
+            for (int i = 0; i < slots.length; i++) constructor.visitVarInsn(opcodes[i], slots[i]);
+            constructor.visitFieldInsn(Opcodes.GETSTATIC, owner + "$RandomizationType", "DEFAULT", "L" + owner + "$RandomizationType;");
+            constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, owner, "<init>",
+                    "(Lnet/minecraft/core/particles/ParticleOptions;ZZDDDFFFFFFIL" + owner + "$RandomizationType;)V", false);
+            constructor.visitInsn(Opcodes.RETURN);
+            constructor.visitMaxs(24, 15);
+            constructor.visitEnd();
+        }
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    @Test
     void acceptsDirectEnumToOptionalOfSameEnumWithBoundOptionalVarIntCodec() throws Exception {
         final Path baseline = jar(record(List.of(component("mode", "L" + ENUM + ";", null)), false),
                 enumClass(CodecFlow.NONE, false));

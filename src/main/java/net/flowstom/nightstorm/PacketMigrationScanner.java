@@ -185,6 +185,8 @@ final class PacketMigrationScanner {
                                                           ClassNode after, List<RecordComponentNode> beforeComponents,
                                                           List<RecordComponentNode> afterComponents,
                                                           List<Integer> path) {
+        final Optional<Migration> snapshot = snapshotPacketMigration(before, after, beforeComponents, afterComponents, target, path);
+        if (snapshot.isPresent()) return snapshot;
         final Optional<Migration> positioned = movedNestedFloatPair(baseline, target, before, after,
                 beforeComponents, afterComponents, path);
         if (positioned.isPresent()) return positioned;
@@ -195,6 +197,107 @@ final class PacketMigrationScanner {
                 beforeComponents, afterComponents, path);
         if (positionPath.isPresent()) return positionPath;
         return appendedPrimitive(baseline, target, before, after, beforeComponents, afterComponents, path);
+    }
+
+    // These manual-to-composite transitions also change field order and encoding. Match the
+    // complete known layout before applying a compatibility serializer to the retained API.
+    private static Optional<Migration> snapshotPacketMigration(ClassNode before, ClassNode after,
+            List<RecordComponentNode> oldFields, List<RecordComponentNode> newFields, Classes target,
+            List<Integer> path) {
+        if (!path.isEmpty() || !before.name.equals(after.name) || !compositeOrder(after, newFields)) return Optional.empty();
+        if (before.name.equals("net/minecraft/network/protocol/game/ServerboundAcceptTeleportationPacket")
+                && fieldLayout(oldFields).equals(List.of("id:I"))
+                && fieldLayout(newFields).equals(List.of("id:I", "x:D", "y:D", "z:D", "yRot:F", "xRot:F"))
+                && manualCalls(before, "read").equals(List.of("readVarInt"))
+                && manualCalls(before, "write").equals(List.of("writeVarInt"))
+                && compositeFields(after, newFields, List.of("VAR_INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"))) {
+            return Optional.of(Migration.payload(Kind.TELEPORT_POSITION, -1));
+        }
+        final String particle = "net/minecraft/core/particles/ParticleOptions";
+        if (!before.name.equals("net/minecraft/network/protocol/game/ClientboundLevelParticlesPacket")
+                || !fieldLayout(oldFields).equals(List.of("particle:L" + particle + ";", "overrideLimiter:Z", "alwaysShow:Z",
+                    "x:D", "y:D", "z:D", "xDist:F", "yDist:F", "zDist:F", "maxSpeed:F", "count:I"))
+                || !fieldLayout(newFields).equals(List.of("particle:L" + particle + ";", "overrideLimiter:Z",
+                    "alwaysShow:Z", "x:D", "y:D", "z:D", "xDist:F", "yDist:F", "zDist:F", "xMaxSpeed:F",
+                    "yMaxSpeed:F", "zMaxSpeed:F", "count:I", "randomizationType:L" + after.name + "$RandomizationType;"))
+                || !manualCalls(before, "read").equals(List.of("readBoolean", "readBoolean", "readDouble", "readDouble",
+                    "readDouble", "readFloat", "readFloat", "readFloat", "readFloat", "readInt"))
+                || !manualCalls(before, "write").equals(List.of("writeBoolean", "writeBoolean", "writeDouble", "writeDouble",
+                    "writeDouble", "writeFloat", "writeFloat", "writeFloat", "writeFloat", "writeInt"))) return Optional.empty();
+        final String randomization = after.name + "$RandomizationType";
+        if (!componentReferencesCodec(after, newFields.getFirst(), "net/minecraft/core/particles/ParticleTypes", "STREAM_CODEC")
+                || !compositeFields(after, newFields.subList(1, 13), List.of("BOOL", "BOOL", "DOUBLE", "DOUBLE", "DOUBLE",
+                    "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "VAR_INT"))
+                || !componentReferencesCodec(after, newFields.getLast(), randomization, "STREAM_CODEC")) return Optional.empty();
+        final ClassNode mode = target.read(randomization);
+        if (!usesIdMapper(mode)) return Optional.empty();
+        final Integer defaultId = enumIds(mode).get("DEFAULT");
+        if (defaultId == null || !legacyParticleConstructor(after, randomization)) return Optional.empty();
+        return Optional.of(Migration.payload(Kind.PARTICLE_AXES, defaultId));
+    }
+
+    private static List<String> fieldLayout(List<RecordComponentNode> fields) {
+        return fields.stream().map(field -> field.name + ":" + field.descriptor).toList();
+    }
+
+    private static List<String> manualCalls(ClassNode owner, String prefix) {
+        final List<String> calls = new ArrayList<>();
+        for (MethodNode method : owner.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (instruction instanceof MethodInsnNode call && call.owner.endsWith("FriendlyByteBuf")
+                        && call.name.startsWith(prefix)) calls.add(call.name);
+            }
+        }
+        return calls;
+    }
+
+    private static boolean compositeOrder(ClassNode owner, List<RecordComponentNode> fields) {
+        int index = 0;
+        for (MethodNode method : owner.methods) {
+            if (!method.name.equals("<clinit>")) continue;
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
+                        || !field.desc.equals(STREAM_CODEC_DESCRIPTOR)) continue;
+                if (index >= fields.size()) return false;
+                final RecordComponentNode component = fields.get(index++);
+                if (!(nextReal(instruction) instanceof InvokeDynamicInsnNode accessor)
+                        || !dynamicReferencesAccessor(accessor, owner.name, component.name, component.descriptor)) return false;
+            }
+        }
+        return index == fields.size();
+    }
+
+    private static boolean compositeFields(ClassNode owner, List<RecordComponentNode> fields, List<String> codecs) {
+        for (int i = 0; i < fields.size(); i++) {
+            if (!componentReferencesCodec(owner, fields.get(i), CODEC_OWNER, codecs.get(i))) return false;
+        }
+        return true;
+    }
+
+    private static boolean legacyParticleConstructor(ClassNode owner, String randomization) {
+        for (MethodNode method : owner.methods) {
+            if (!method.name.equals("<init>") || !method.desc.equals(
+                    "(Lnet/minecraft/core/particles/ParticleOptions;ZZDDDFFFFI)V")) continue;
+            final List<String> arguments = new ArrayList<>();
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (instruction instanceof VarInsnNode variable) arguments.add((switch (variable.getOpcode()) {
+                    case Opcodes.ALOAD -> "reference";
+                    case Opcodes.ILOAD -> "int";
+                    case Opcodes.DLOAD -> "double";
+                    case Opcodes.FLOAD -> "float";
+                    default -> "unsupported";
+                }) + ":" + variable.var);
+                else if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+                        && field.owner.equals(randomization)) arguments.add(field.name);
+                else if (instruction instanceof MethodInsnNode call && call.owner.equals(owner.name)
+                        && call.name.equals("<init>")) {
+                    return arguments.equals(List.of("reference:0", "reference:1", "int:2", "int:3",
+                            "double:4", "double:6", "double:8", "float:10", "float:11", "float:12",
+                            "float:13", "float:13", "float:13", "int:14", "DEFAULT"));
+                }
+            }
+        }
+        return false;
     }
 
     private static Optional<Migration> movedNestedFloatPair(Classes baseline, Classes target, ClassNode before,
@@ -1514,7 +1617,9 @@ final class PacketMigrationScanner {
         REORDERED_BOOLEAN_ENUM,
         LINEAR_POSITION_PATH,
         APPENDED_BOOLEAN,
-        MOVED_NESTED_FLOATS
+        MOVED_NESTED_FLOATS,
+        TELEPORT_POSITION,
+        PARTICLE_AXES
     }
 
     record Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
@@ -1529,6 +1634,10 @@ final class PacketMigrationScanner {
                   Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
                   boolean defaultValue) {
             this(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue, 0, 1);
+        }
+
+        static Migration payload(Kind kind, int discriminator) {
+            return new Migration(null, kind, List.of(), Map.of(), "", -1, discriminator, false, -1, -1);
         }
 
         static Migration optionalEnum(List<Integer> path, Map<String, Integer> ids, String targetEnum) {

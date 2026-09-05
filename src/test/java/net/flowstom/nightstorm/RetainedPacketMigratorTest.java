@@ -14,6 +14,99 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RetainedPacketMigratorTest {
     @Test
+    void snapshotSerializersPreserveLegacyValuesAndConsumeCompletePayloads() throws Exception {
+        final Path root = sourceRoot();
+        final Path directory = root.resolve("src/main/java/example");
+        final Path teleport = directory.resolve("Teleport.java");
+        write(teleport, """
+                package example;
+                record Teleport(int id) {
+                    static final NetworkBuffer.Type<Teleport> SERIALIZER = new NetworkBuffer.Type<>() {
+                        public void write(NetworkBuffer buffer, Teleport value) { buffer.write(NetworkBuffer.VAR_INT, value.id); }
+                        public Teleport read(NetworkBuffer buffer) { return new Teleport(buffer.read(NetworkBuffer.VAR_INT)); }
+                    };
+                }
+                """);
+        final Path particle = directory.resolve("ParticlePacket.java");
+        write(particle, """
+                package example;
+                import java.util.Objects;
+                import static example.NetworkBuffer.*;
+                record ParticlePacket(Particle particle, boolean overrideLimiter, boolean longDistance,
+                        double x, double y, double z, float offsetX, float offsetY, float offsetZ,
+                        float maxSpeed, int particleCount) {
+                    static final NetworkBuffer.Type<ParticlePacket> SERIALIZER = null;
+                }
+                """);
+        final var migrations = List.of(
+                semanticMigration("Teleport", PacketMigrationScanner.Kind.TELEPORT_POSITION, -1, -1, false),
+                semanticMigration("ParticlePacket", PacketMigrationScanner.Kind.PARTICLE_AXES, -1, 7, false));
+        RetainedPacketMigrator.apply(root, migrations);
+        final String firstTeleport = Files.readString(teleport);
+        final String firstParticle = Files.readString(particle);
+        RetainedPacketMigrator.apply(root, migrations);
+        assertEquals(firstTeleport, Files.readString(teleport));
+        assertEquals(firstParticle, Files.readString(particle));
+        write(directory.resolve("WireCheck.java"), """
+                package example;
+                import java.util.*;
+                public class WireCheck {
+                    public static void verify() {
+                        var buffer = new NetworkBuffer();
+                        // Independent target-wire fixture with nonzero position and rotation.
+                        buffer.values.addAll(List.of(123, 1d, 2d, 3d, 4f, 5f));
+                        buffer.codecs.addAll(List.of("VAR_INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"));
+                        if (Teleport.SERIALIZER.read(buffer).id() != 123 || buffer.index != 6) throw new AssertionError();
+                        buffer = new NetworkBuffer();
+                        var packet = new ParticlePacket(new Particle(300), true, false, 1d, 2d, 3d, 4f, 5f, 6f, 7f, 500);
+                        ParticlePacket.SERIALIZER.write(buffer, packet);
+                        if (!buffer.codecs.equals(List.of("VAR_INT", "BOOLEAN", "BOOLEAN", "DOUBLE", "DOUBLE", "DOUBLE",
+                                "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "VAR_INT", "VAR_INT"))) throw new AssertionError(buffer.codecs);
+                        if (!buffer.values.equals(List.of(300, true, false, 1d, 2d, 3d, 4f, 5f, 6f, 7f, 7f, 7f, 500, 7))) throw new AssertionError(buffer.values);
+                        if (!ParticlePacket.SERIALIZER.read(buffer).equals(packet) || buffer.index != 14) throw new AssertionError();
+                        buffer.index = 0;
+                        buffer.values.set(10, 8f);
+                        try {
+                            ParticlePacket.SERIALIZER.read(buffer);
+                            throw new AssertionError("Unrepresentable axis speeds must not be silently discarded");
+                        } catch (IllegalArgumentException expected) { }
+                    }
+                }
+                record Particle(int id) {
+                    static Particle fromId(int id) { return new Particle(id); }
+                    Particle readData(NetworkBuffer buffer) { return this; }
+                    void writeData(NetworkBuffer buffer) { }
+                }
+                class NetworkBuffer {
+                    interface Type<T> {
+                        void write(NetworkBuffer buffer, T value);
+                        T read(NetworkBuffer buffer);
+                    }
+                    record Codec<T>(String name) { }
+                    static final Codec<Integer> VAR_INT = new Codec<>("VAR_INT");
+                    static final Codec<Boolean> BOOLEAN = new Codec<>("BOOLEAN");
+                    static final Codec<Double> DOUBLE = new Codec<>("DOUBLE");
+                    static final Codec<Float> FLOAT = new Codec<>("FLOAT");
+                    final List<String> codecs = new ArrayList<>();
+                    final List<Object> values = new ArrayList<>();
+                    int index;
+                    <T> void write(Codec<T> codec, T value) { codecs.add(codec.name()); values.add(value); }
+                    @SuppressWarnings("unchecked")
+                    <T> T read(Codec<T> codec) {
+                        if (!codecs.get(index).equals(codec.name())) throw new AssertionError(codec);
+                        return (T) values.get(index++);
+                    }
+                }
+                """);
+        final Path classes = Files.createDirectories(root.resolve("classes"));
+        assertEquals(0, javax.tools.ToolProvider.getSystemJavaCompiler().run(null, null, null,
+                "-d", classes.toString(), teleport.toString(), particle.toString(), directory.resolve("WireCheck.java").toString()));
+        try (var loader = new java.net.URLClassLoader(new java.net.URL[]{classes.toUri().toURL()})) {
+            loader.loadClass("example.WireCheck").getMethod("verify").invoke(null);
+        }
+    }
+
+    @Test
     void resolvesEveryMigrationBeforeChangingSources() throws Exception {
         final Path sourceRoot = sourceRoot();
         final Path packageDirectory = sourceRoot.resolve("src/main/java/example");

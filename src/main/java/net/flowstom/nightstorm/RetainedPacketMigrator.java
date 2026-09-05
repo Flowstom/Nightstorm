@@ -127,6 +127,8 @@ final class RetainedPacketMigrator {
         final Expression replacement = switch (migration.kind()) {
             case REORDERED_BOOLEAN_ENUM -> reorderedBooleanSerializer(sources, packetType, current, migration);
             case LINEAR_POSITION_PATH -> linearPositionSerializer(sources, packetType, current, migration);
+            case TELEPORT_POSITION -> teleportPositionSerializer(sources, packetType, current);
+            case PARTICLE_AXES -> particleAxesSerializer(sources, packetType, migration.discriminator());
             case APPENDED_BOOLEAN -> appendedBooleanSerializer(sources, packetType, current, migration.defaultValue());
             case OPTIONAL_ENUM, BYTE_ARRAY_BIT_SET, MOVED_NESTED_FLOATS ->
                     throw new IllegalStateException("Unexpected leaf migration");
@@ -492,6 +494,94 @@ final class RetainedPacketMigrator {
                 record.getParameter(1).getType(), codecs[1], record.getParameter(2).getType(),
                 record.getParameter(3).getType(), codecs[3], record.getParameter(4).getType(), codecs[4],
                 record.getParameter(5).getType(), codecs[5], type), "linear position-path serializer");
+    }
+
+    private static Expression teleportPositionSerializer(SourceIndex sources, ResolvedType packetType, Expression current) {
+        final RecordDeclaration record = requireRecord(packetType);
+        if (record.getParameters().size() != 1 || !record.getParameter(0).getType().asString().equals("int")) {
+            throw new IllegalStateException("Expected a single teleport ID component");
+        }
+        if (current.toString().contains("teleportPositionDelegate")) return current.clone();
+        final String type = record.getNameAsString();
+        // The retained listener only needs the confirmation ID. Consume the complete client payload.
+        return sources.parseExpression("""
+                new NetworkBuffer.Type<%s>() {
+                    private final NetworkBuffer.Type<%s> teleportPositionDelegate = %s;
+                    @Override
+                    public void write(NetworkBuffer buffer, %s value) {
+                        teleportPositionDelegate.write(buffer, value);
+                        buffer.write(NetworkBuffer.DOUBLE, 0d);
+                        buffer.write(NetworkBuffer.DOUBLE, 0d);
+                        buffer.write(NetworkBuffer.DOUBLE, 0d);
+                        buffer.write(NetworkBuffer.FLOAT, 0f);
+                        buffer.write(NetworkBuffer.FLOAT, 0f);
+                    }
+                    @Override
+                    public %s read(NetworkBuffer buffer) {
+                        var value = teleportPositionDelegate.read(buffer);
+                        buffer.read(NetworkBuffer.DOUBLE);
+                        buffer.read(NetworkBuffer.DOUBLE);
+                        buffer.read(NetworkBuffer.DOUBLE);
+                        buffer.read(NetworkBuffer.FLOAT);
+                        buffer.read(NetworkBuffer.FLOAT);
+                        return value;
+                    }
+                }
+                """.formatted(type, type, current, type, type), "teleport position serializer");
+    }
+
+    private static Expression particleAxesSerializer(SourceIndex sources, ResolvedType packetType, int defaultId) {
+        final RecordDeclaration record = requireRecord(packetType);
+        final List<String> layout = record.getParameters().stream()
+                .map(parameter -> parameter.getNameAsString() + ":" + parameter.getType().asString()).toList();
+        if (!layout.equals(List.of("particle:Particle", "overrideLimiter:boolean", "longDistance:boolean", "x:double",
+                "y:double", "z:double", "offsetX:float", "offsetY:float", "offsetZ:float", "maxSpeed:float",
+                "particleCount:int"))) throw new IllegalStateException("Unsupported retained particle source layout: " + layout);
+        final String type = record.getNameAsString();
+        // Match vanilla's legacy constructor: broadcast scalar speed to all axes and use DEFAULT randomization.
+        return sources.parseExpression("""
+                new NetworkBuffer.Type<%s>() {
+                    @Override
+                    public void write(NetworkBuffer buffer, %s value) {
+                        buffer.write(VAR_INT, value.particle.id());
+                        value.particle.writeData(buffer);
+                        buffer.write(BOOLEAN, value.overrideLimiter);
+                        buffer.write(BOOLEAN, value.longDistance);
+                        buffer.write(DOUBLE, value.x);
+                        buffer.write(DOUBLE, value.y);
+                        buffer.write(DOUBLE, value.z);
+                        buffer.write(FLOAT, value.offsetX);
+                        buffer.write(FLOAT, value.offsetY);
+                        buffer.write(FLOAT, value.offsetZ);
+                        buffer.write(FLOAT, value.maxSpeed);
+                        buffer.write(FLOAT, value.maxSpeed);
+                        buffer.write(FLOAT, value.maxSpeed);
+                        buffer.write(VAR_INT, value.particleCount);
+                        buffer.write(VAR_INT, %d);
+                    }
+                    @Override
+                    public %s read(NetworkBuffer buffer) {
+                        Particle particle = Objects.requireNonNull(Particle.fromId(buffer.read(VAR_INT))).readData(buffer);
+                        boolean overrideLimiter = buffer.read(BOOLEAN);
+                        boolean longDistance = buffer.read(BOOLEAN);
+                        double x = buffer.read(DOUBLE);
+                        double y = buffer.read(DOUBLE);
+                        double z = buffer.read(DOUBLE);
+                        float offsetX = buffer.read(FLOAT);
+                        float offsetY = buffer.read(FLOAT);
+                        float offsetZ = buffer.read(FLOAT);
+                        float maxSpeed = buffer.read(FLOAT);
+                        float ySpeed = buffer.read(FLOAT);
+                        float zSpeed = buffer.read(FLOAT);
+                        int count = buffer.read(VAR_INT);
+                        int randomization = buffer.read(VAR_INT);
+                        if (Float.compare(maxSpeed, ySpeed) != 0 || Float.compare(maxSpeed, zSpeed) != 0 || randomization != %d) {
+                            throw new IllegalArgumentException("Particle payload cannot be represented by the retained scalar-speed API");
+                        }
+                        return new %s(particle, overrideLimiter, longDistance, x, y, z, offsetX, offsetY, offsetZ, maxSpeed, count);
+                    }
+                }
+                """.formatted(type, type, defaultId, type, defaultId, type), "particle axis serializer");
     }
 
     private static Expression appendedBooleanSerializer(SourceIndex sources, ResolvedType packetType,
