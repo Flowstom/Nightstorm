@@ -86,6 +86,11 @@ import net.minestom.server.network.packet.nightstorm.NightstormConfigurationClie
 import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundPostEffectsPacket;
 import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundSwingAnimationPacket;
 import net.minestom.server.network.packet.nightstorm.NightstormPlayServerboundPunchPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormConfigurationClientboundPostEffectsPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundAddTransientBlockPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundPostEffectsPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundSwingAnimationPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayServerboundPunchPacket;
 import net.minestom.server.network.packet.server.ServerPacket;
 import net.minestom.server.network.packet.server.common.ClearDialogPacket;
 import net.minestom.server.network.packet.server.common.CookieRequestPacket;
@@ -467,6 +472,7 @@ public final class PacketVanilla {
             entry(EntityStatusPacket.class, EntityStatusPacket.SERIALIZER),
             entry(EntityPositionSyncPacket.class, EntityPositionSyncPacket.SERIALIZER),
             entry(ExplosionPacket.class, ExplosionPacket.SERIALIZER),
+            entry(NightstormPlayClientboundAddTransientBlockPacket.class, NightstormPlayClientboundAddTransientBlockPacket.SERIALIZER),
             entry(UnloadChunkPacket.class, UnloadChunkPacket.SERIALIZER),
             entry(ChangeGameStatePacket.class, ChangeGameStatePacket.SERIALIZER),
             entry(GameRuleValuesPacket.class, GameRuleValuesPacket.SERIALIZER),
