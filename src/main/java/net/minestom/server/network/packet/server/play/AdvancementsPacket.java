@@ -71,11 +71,34 @@ public record AdvancementsPacket(
      */
     public record AdvancementMapping(String key,
                                      Advancement value) implements ComponentHolder<AdvancementMapping> {
-        public static final NetworkBuffer.Type<AdvancementMapping> SERIALIZER = NetworkBufferTemplate.template(
+        public static final NetworkBuffer.Type<AdvancementMapping> SERIALIZER = new NetworkBuffer.Type<AdvancementMapping>() {
+    private final NetworkBuffer.Type<AdvancementMapping> positionCompatibilityDelegate = NetworkBufferTemplate.template(
                 NetworkBuffer.STRING, AdvancementMapping::key,
                 Advancement.SERIALIZER, AdvancementMapping::value,
                 AdvancementMapping::new
         );
+
+    @Override
+    public void write(NetworkBuffer buffer, AdvancementMapping value) {
+        positionCompatibilityDelegate.write(buffer, value);
+        var positionedValue = value.value().displayData();
+        buffer.write(NetworkBuffer.FLOAT, positionedValue == null ? 0.0f : positionedValue.x());
+        buffer.write(NetworkBuffer.FLOAT, positionedValue == null ? 0.0f : positionedValue.y());
+    }
+
+    @Override
+    public AdvancementMapping read(NetworkBuffer buffer) {
+        var value = positionCompatibilityDelegate.read(buffer);
+        float position0 = buffer.read(NetworkBuffer.FLOAT);
+        float position1 = buffer.read(NetworkBuffer.FLOAT);
+        var nestedValue = value.value();
+        var positionedValue = nestedValue.displayData();
+        if (positionedValue == null) return value;
+        var adjustedPosition = new DisplayData(positionedValue.title(), positionedValue.description(), positionedValue.icon(), positionedValue.frameType(), positionedValue.flags(), positionedValue.backgroundTexture(), position0, position1);
+        var adjustedNested = new Advancement(nestedValue.parentIdentifier(), adjustedPosition, nestedValue.requirements(), nestedValue.sendTelemetryData());
+        return new AdvancementMapping(value.key(), adjustedNested);
+    }
+};
 
         @Override
         public Collection<Component> components() {
@@ -131,37 +154,31 @@ public record AdvancementsPacket(
                               float x, float y) implements ComponentHolder<DisplayData> {
 
         public static final NetworkBuffer.Type<DisplayData> SERIALIZER = new NetworkBuffer.Type<>() {
-            @Override
-            public void write(NetworkBuffer buffer, DisplayData value) {
-                buffer.write(NetworkBuffer.COMPONENT, value.title);
-                buffer.write(NetworkBuffer.COMPONENT, value.description);
-                buffer.write(ItemStackTemplate.NETWORK_TYPE, value.icon);
-                buffer.write(NetworkBuffer.Enum(FrameType.class), value.frameType);
-                buffer.write(NetworkBuffer.INT, value.flags);
-                if ((value.flags & 0x1) != 0) {
-                    assert value.backgroundTexture != null;
-                    buffer.write(NetworkBuffer.STRING, value.backgroundTexture);
-                }
-                buffer.write(NetworkBuffer.FLOAT, value.x);
-                buffer.write(NetworkBuffer.FLOAT, value.y);
-            }
 
-            @Override
-            public DisplayData read(NetworkBuffer buffer) {
-                var title = buffer.read(NetworkBuffer.COMPONENT);
-                var description = buffer.read(NetworkBuffer.COMPONENT);
-                var icon = buffer.read(ItemStackTemplate.NETWORK_TYPE);
-                var frameType = FrameType.values()[buffer.read(NetworkBuffer.VAR_INT)];
-                var flags = buffer.read(NetworkBuffer.INT);
-                var backgroundTexture = (flags & 0x1) != 0 ? buffer.read(NetworkBuffer.STRING) : null;
-                var x = buffer.read(NetworkBuffer.FLOAT);
-                var y = buffer.read(NetworkBuffer.FLOAT);
-                return new DisplayData(title, description,
-                        icon, frameType,
-                        flags, backgroundTexture,
-                        x, y);
-            }
-        };
+    @Override
+    public void write(NetworkBuffer buffer, DisplayData value) {
+        buffer.write(NetworkBuffer.COMPONENT, value.title);
+        buffer.write(NetworkBuffer.COMPONENT, value.description);
+        buffer.write(ItemStackTemplate.NETWORK_TYPE, value.icon);
+        buffer.write(NetworkBuffer.Enum(FrameType.class), value.frameType);
+        buffer.write(NetworkBuffer.INT, value.flags);
+        if ((value.flags & 0x1) != 0) {
+            assert value.backgroundTexture != null;
+            buffer.write(NetworkBuffer.STRING, value.backgroundTexture);
+        }
+    }
+
+    @Override
+    public DisplayData read(NetworkBuffer buffer) {
+        var title = buffer.read(NetworkBuffer.COMPONENT);
+        var description = buffer.read(NetworkBuffer.COMPONENT);
+        var icon = buffer.read(ItemStackTemplate.NETWORK_TYPE);
+        var frameType = FrameType.values()[buffer.read(NetworkBuffer.VAR_INT)];
+        var flags = buffer.read(NetworkBuffer.INT);
+        var backgroundTexture = (flags & 0x1) != 0 ? buffer.read(NetworkBuffer.STRING) : null;
+        return new DisplayData(title, description, icon, frameType, flags, backgroundTexture, 0.0f, 0.0f);
+    }
+};
 
         @Override
         public List<Component> components() {

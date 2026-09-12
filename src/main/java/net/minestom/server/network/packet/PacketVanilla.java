@@ -22,7 +22,6 @@ import net.minestom.server.network.packet.client.login.ClientLoginAcknowledgedPa
 import net.minestom.server.network.packet.client.login.ClientLoginPluginResponsePacket;
 import net.minestom.server.network.packet.client.login.ClientLoginStartPacket;
 import net.minestom.server.network.packet.client.play.ClientAdvancementTabPacket;
-import net.minestom.server.network.packet.client.play.ClientAnimationPacket;
 import net.minestom.server.network.packet.client.play.ClientAttackPacket;
 import net.minestom.server.network.packet.client.play.ClientChangeDifficultyPacket;
 import net.minestom.server.network.packet.client.play.ClientChangeGameModePacket;
@@ -83,6 +82,11 @@ import net.minestom.server.network.packet.client.play.ClientUseItemPacket;
 import net.minestom.server.network.packet.client.play.ClientVehicleMovePacket;
 import net.minestom.server.network.packet.client.play.ClientWindowSlotStatePacket;
 import net.minestom.server.network.packet.client.status.StatusRequestPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormConfigurationClientboundPostEffectsPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundAddTransientBlockPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundPostEffectsPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayClientboundSwingAnimationPacket;
+import net.minestom.server.network.packet.nightstorm.NightstormPlayServerboundPunchPacket;
 import net.minestom.server.network.packet.server.ServerPacket;
 import net.minestom.server.network.packet.server.common.ClearDialogPacket;
 import net.minestom.server.network.packet.server.common.CookieRequestPacket;
@@ -361,6 +365,7 @@ public final class PacketVanilla {
             entry(ClientInputPacket.class, ClientInputPacket.SERIALIZER),
             entry(ClientPlayerLoadedPacket.class, ClientPlayerLoadedPacket.SERIALIZER),
             entry(ClientPongPacket.class, ClientPongPacket.SERIALIZER),
+            entry(NightstormPlayServerboundPunchPacket.class, NightstormPlayServerboundPunchPacket.SERIALIZER),
             entry(ClientSetRecipeBookStatePacket.class, ClientSetRecipeBookStatePacket.SERIALIZER),
             entry(ClientRecipeBookSeenRecipePacket.class, ClientRecipeBookSeenRecipePacket.SERIALIZER),
             entry(ClientNameItemPacket.class, ClientNameItemPacket.SERIALIZER),
@@ -378,7 +383,6 @@ public final class PacketVanilla {
             entry(ClientSetTestBlockPacket.class, ClientSetTestBlockPacket.SERIALIZER),
             entry(ClientUpdateSignPacket.class, ClientUpdateSignPacket.SERIALIZER),
             entry(ClientSpectatorActionPacket.class, ClientSpectatorActionPacket.SERIALIZER),
-            entry(ClientAnimationPacket.class, ClientAnimationPacket.SERIALIZER),
             entry(ClientTeleportToEntityPacket.class, ClientTeleportToEntityPacket.SERIALIZER),
             entry(ClientTestInstanceBlockActionPacket.class, ClientTestInstanceBlockActionPacket.SERIALIZER),
             entry(ClientPlayerBlockPlacementPacket.class, ClientPlayerBlockPlacementPacket.SERIALIZER),
@@ -413,6 +417,7 @@ public final class PacketVanilla {
             entry(RegistryDataPacket.class, RegistryDataPacket.SERIALIZER),
             entry(ResourcePackPopPacket.class, ResourcePackPopPacket.SERIALIZER),
             entry(ResourcePackPushPacket.class, ResourcePackPushPacket.SERIALIZER),
+            entry(NightstormConfigurationClientboundPostEffectsPacket.class, NightstormConfigurationClientboundPostEffectsPacket.SERIALIZER),
             entry(CookieStorePacket.class, CookieStorePacket.SERIALIZER),
             entry(TransferPacket.class, TransferPacket.SERIALIZER),
             entry(UpdateEnabledFeaturesPacket.class, UpdateEnabledFeaturesPacket.SERIALIZER),
@@ -463,6 +468,7 @@ public final class PacketVanilla {
             entry(EntityStatusPacket.class, EntityStatusPacket.SERIALIZER),
             entry(EntityPositionSyncPacket.class, EntityPositionSyncPacket.SERIALIZER),
             entry(ExplosionPacket.class, ExplosionPacket.SERIALIZER),
+            entry(NightstormPlayClientboundAddTransientBlockPacket.class, NightstormPlayClientboundAddTransientBlockPacket.SERIALIZER),
             entry(UnloadChunkPacket.class, UnloadChunkPacket.SERIALIZER),
             entry(ChangeGameStatePacket.class, ChangeGameStatePacket.SERIALIZER),
             entry(GameRuleValuesPacket.class, GameRuleValuesPacket.SERIALIZER),
@@ -508,6 +514,7 @@ public final class PacketVanilla {
             entry(ResetScorePacket.class, ResetScorePacket.SERIALIZER),
             entry(ResourcePackPopPacket.class, ResourcePackPopPacket.SERIALIZER),
             entry(ResourcePackPushPacket.class, ResourcePackPushPacket.SERIALIZER),
+            entry(NightstormPlayClientboundPostEffectsPacket.class, NightstormPlayClientboundPostEffectsPacket.SERIALIZER),
             entry(RespawnPacket.class, RespawnPacket.SERIALIZER),
             entry(EntityHeadLookPacket.class, EntityHeadLookPacket.SERIALIZER),
             entry(MultiBlockChangePacket.class, MultiBlockChangePacket.SERIALIZER),
@@ -547,6 +554,7 @@ public final class PacketVanilla {
             entry(StartConfigurationPacket.class, StartConfigurationPacket.SERIALIZER),
             entry(StopSoundPacket.class, StopSoundPacket.SERIALIZER),
             entry(CookieStorePacket.class, CookieStorePacket.SERIALIZER),
+            entry(NightstormPlayClientboundSwingAnimationPacket.class, NightstormPlayClientboundSwingAnimationPacket.SERIALIZER),
             entry(SystemChatPacket.class, SystemChatPacket.SERIALIZER),
             entry(PlayerListHeaderAndFooterPacket.class, PlayerListHeaderAndFooterPacket.SERIALIZER),
             entry(NbtQueryResponsePacket.class, NbtQueryResponsePacket.SERIALIZER),
