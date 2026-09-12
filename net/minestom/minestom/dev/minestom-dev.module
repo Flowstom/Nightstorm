@@ -146,11 +146,11 @@
         {
           "name": "minestom-dev.jar",
           "url": "minestom-dev.jar",
-          "size": 4255206,
-          "sha512": "dc5565ab056eff2b70690b40c36894ee50da1364bf81e0d6b291b6458ef7cc1c935017b183aac2c6c2ec3340cb75a4786e1402f1a65baf40e3f9a9e596376ecd",
-          "sha256": "c2e748c9490527af5262408c87d6504cbce7dc51177259d3841b76f0117b2d4a",
-          "sha1": "7cc8fd00fe02caf6820fa6b58775295d7105c0ab",
-          "md5": "ac667619055434e6b61dbd659bc694e0"
+          "size": 4262053,
+          "sha512": "e714be334a091c3dbba1d6368ccbe55924a9ebd0d317f69a0151a3218cc886e89f76505e31abf1fc50948fcb0b1ea481445b8ae7993febfb83165a3d7c11ac6c",
+          "sha256": "ed893ff614670efc05a23d765aaa46db2f3d60bd7693d05a29ff933ad98b9c23",
+          "sha1": "4020729650e36f98b81535354cb6a5ae1859b074",
+          "md5": "b9bf2f65c52e53c8f178a06e6748faca"
         }
       ]
     },
@@ -350,7 +350,7 @@
           "group": "net.flowstom",
           "module": "nightstorm-data",
           "version": {
-            "requires": "2026.08.28-26.3-rc-2"
+            "requires": "2026.09.12-26.3-rc-2"
           },
           "excludes": [
             {
@@ -364,11 +364,11 @@
         {
           "name": "minestom-dev.jar",
           "url": "minestom-dev.jar",
-          "size": 4255206,
-          "sha512": "dc5565ab056eff2b70690b40c36894ee50da1364bf81e0d6b291b6458ef7cc1c935017b183aac2c6c2ec3340cb75a4786e1402f1a65baf40e3f9a9e596376ecd",
-          "sha256": "c2e748c9490527af5262408c87d6504cbce7dc51177259d3841b76f0117b2d4a",
-          "sha1": "7cc8fd00fe02caf6820fa6b58775295d7105c0ab",
-          "md5": "ac667619055434e6b61dbd659bc694e0"
+          "size": 4262053,
+          "sha512": "e714be334a091c3dbba1d6368ccbe55924a9ebd0d317f69a0151a3218cc886e89f76505e31abf1fc50948fcb0b1ea481445b8ae7993febfb83165a3d7c11ac6c",
+          "sha256": "ed893ff614670efc05a23d765aaa46db2f3d60bd7693d05a29ff933ad98b9c23",
+          "sha1": "4020729650e36f98b81535354cb6a5ae1859b074",
+          "md5": "b9bf2f65c52e53c8f178a06e6748faca"
         }
       ]
     },
@@ -384,11 +384,11 @@
         {
           "name": "minestom-dev-sources.jar",
           "url": "minestom-dev-sources.jar",
-          "size": 1527744,
-          "sha512": "8cd393595195be4610a4aeab6d7aa26d0b907837e1c04d6416a84c1ac9c44ac6cca8121de7650bcbad3e23e16b31d233e2f4b4aca11acdc12ce28169c9ac40a5",
-          "sha256": "88b9ea135f55e4a7fb1d889349f032c14e9e45efe660b93a599b2859f0f05011",
-          "sha1": "987601916a1e1d10945444cf62fc3d148db76842",
-          "md5": "02ee4eb3710aff0dbbd1ea26a2802a1e"
+          "size": 1529651,
+          "sha512": "1040ab02b1029a36ce056ad270dbc51202e4739da13cee92a14b983acebbf4a7649d8213fe483f08a20c18df97da9c3dfed972a200d7872290c18db6c1baede3",
+          "sha256": "847f3a6ca059f6f8b6d53ef8af66c8cc9de2bb55106b40c61d1cdb73daa47637",
+          "sha1": "37e5502e93e915e4e8e2f5fe662abd2531a60ad6",
+          "md5": "43cde4a30e327c82f581acc8dd800258"
         }
       ]
     },
@@ -404,11 +404,11 @@
         {
           "name": "minestom-dev-javadoc.jar",
           "url": "minestom-dev-javadoc.jar",
-          "size": 14015260,
-          "sha512": "c90b4c80cf4665ebf36bd920a20c8791022ccebcb3318476c6a07a57fcced4e458b0dcb5076320f452270307225f0592dee74565eaa6b1b5ec51ea3ad85d4037",
-          "sha256": "0b502d20e2779be641423ff65cbe0b86c7361d372c48bffc29f69c297f97a46b",
-          "sha1": "8c34fc6587bcd2e6240875465934e9b711e470c0",
-          "md5": "dc7270180561881ae503ad80d1b95dca"
+          "size": 14021896,
+          "sha512": "72c783431dda9ca3710549253db2613a957cf0b9053c7472168fd81d4609956db91f76598bf796aef7969539c9f8051bef41fd4ae731dcf5863ce235b07e8b1a",
+          "sha256": "8482f0a3b6c7ac1c8fbf4b5457d5a4a4824d4def1891e90ed43a4becb29455e9",
+          "sha1": "f06c364091343ccd23b163a719d5e4668beeb2d6",
+          "md5": "b80b1648e5c82e25c39e4d64566987d8"
         }
       ]
     }
