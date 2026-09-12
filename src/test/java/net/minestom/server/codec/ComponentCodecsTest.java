@@ -1,0 +1,131 @@
+package net.minestom.server.codec;
+
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.nbt.CompoundBinaryTag;
+import net.kyori.adventure.nbt.IntBinaryTag;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.object.ObjectContents;
+import net.minestom.server.adventure.MinestomAdventure;
+import net.minestom.server.network.player.GameProfile;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class ComponentCodecsTest {
+
+    @Test
+    void readExpandFromStringInList() throws Exception {
+        var input = MinestomAdventure.tagStringIO().asTag("{extra:[{color:\"red\",text:\"Hello\"},\" World\"],text:\"\"}");
+        var actual = ComponentCodecs.COMPONENT.decode(Transcoder.NBT, input).orElseThrow();
+        var expected = Component.text()
+                .append(Component.text("Hello", NamedTextColor.RED))
+                .append(Component.text(" World"))
+                .build();
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void writeFlattenToInList() throws IOException {
+        var component = Component.text()
+                .append(Component.text("Hello", NamedTextColor.RED))
+                .append(Component.text(" World"))
+                .build();
+        var nbt = ComponentCodecs.COMPONENT.encode(Transcoder.NBT, component).orElseThrow();
+        assertEquals("{extra:[{color:\"red\",text:\"Hello\"},\" World\"],text:\"\"}", MinestomAdventure.tagStringIO().asString(nbt));
+    }
+
+    @Test
+    void writeCustomClickEvent() throws IOException {
+        var component = Component.text("Click me!").clickEvent(ClickEvent.custom(
+                Key.key("hello:world"), MinestomAdventure.wrapNbt(IntBinaryTag.intBinaryTag(55))));
+        var nbt = ComponentCodecs.COMPONENT.encode(Transcoder.NBT, component).orElseThrow();
+        assertEquals("{click_event:{payload:55,action:\"custom\",id:\"hello:world\"},text:\"Click me!\"}",
+                MinestomAdventure.tagStringIO().asString(nbt));
+    }
+
+    @Test
+    void readCustomClickEvent() throws IOException {
+        var input = MinestomAdventure.tagStringIO().asTag("{click_event:{payload:55,action:\"custom\",id:\"hello:world\"},text:\"Click me!\"}");
+        var actual = ComponentCodecs.COMPONENT.decode(Transcoder.NBT, input).orElseThrow();
+        var expected = Component.text("Click me!").clickEvent(ClickEvent.custom(
+                Key.key("hello:world"), MinestomAdventure.wrapNbt(IntBinaryTag.intBinaryTag(55))));
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void readShowEntityWithoutName() {
+        UUID uuid = UUID.randomUUID();
+
+        var input = CompoundBinaryTag.builder()
+                .putString("text", "hover")
+                .put("hover_event", CompoundBinaryTag.builder()
+                        .putString("action", "show_entity")
+                        .putString("id", "minecraft:player")
+                        .putString("uuid", uuid.toString())
+                        .build())
+                .build();
+
+        var actual = ComponentCodecs.COMPONENT.decode(Transcoder.NBT, input).orElseThrow();
+        var expected = Component.text("hover")
+                .hoverEvent(HoverEvent.showEntity(
+                        Key.key("minecraft:player"),
+                        uuid,
+                        null
+                ));
+
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void readObjectFallback() {
+        var input = CompoundBinaryTag.builder()
+                .putString("type", "object")
+                .putString("sprite", "missing")
+                .putString("fallback", "Missing")
+                .build();
+
+        var actual = ComponentCodecs.COMPONENT.decode(Transcoder.NBT, input).orElseThrow();
+        var expected = Component.object()
+                .contents(ObjectContents.sprite(Key.key("missing")))
+                .fallback(Component.text("Missing"))
+                .build();
+
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void writeObjectFallback() {
+        var component = Component.object()
+                .contents(ObjectContents.sprite(Key.key("missing")))
+                .fallback(Component.text("Missing"))
+                .build();
+
+        var nbt = ComponentCodecs.COMPONENT.encode(Transcoder.NBT, component).orElseThrow();
+        var actual = ComponentCodecs.COMPONENT.decode(Transcoder.NBT, nbt).orElseThrow();
+
+        assertEquals(component, actual);
+    }
+
+    @Test
+    void writeObjectPlayerHeadProfileAndTexture() {
+        final UUID uuid = UUID.fromString("8667ba71-b85a-4004-af54-457a9734eed7");
+        var component = Component.object(ObjectContents.playerHead()
+                .name("Steve")
+                .id(uuid)
+                .profileProperty(new GameProfile.Property("test", "value", null))
+                .texture(Key.key("red"))
+                .build());
+
+        final var nbt = ComponentCodecs.COMPONENT.encode(Transcoder.NBT, component).orElseThrow();
+        final var player = ((CompoundBinaryTag) nbt).getCompound("player");
+        assertEquals("Steve", player.getString("name"));
+        assertEquals("minecraft:red", player.getString("texture"));
+        assertEquals(component, ComponentCodecs.COMPONENT.decode(Transcoder.NBT, nbt).orElseThrow());
+    }
+}

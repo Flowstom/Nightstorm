@@ -1,0 +1,165 @@
+package net.minestom.server.instance;
+
+import net.minestom.server.coordinate.Point;
+import net.minestom.server.entity.Player;
+import net.minestom.server.instance.block.Block;
+import net.minestom.server.instance.block.BlockFace;
+import net.minestom.server.instance.block.BlockHandler;
+import net.minestom.server.instance.generator.Generator;
+import net.minestom.server.utils.chunk.ChunkSupplier;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Collection;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * The {@link SharedInstance} is an instance that shares the same chunks as its linked {@link InstanceContainer},
+ * entities are separated.
+ */
+public class SharedInstance extends Instance {
+    private final InstanceContainer instanceContainer;
+
+    public SharedInstance(UUID uuid, InstanceContainer instanceContainer) {
+        super(uuid, instanceContainer.getDimensionType());
+        this.instanceContainer = instanceContainer;
+    }
+
+    @Override
+    public void setBlock(int x, int y, int z, Block block, boolean doBlockUpdates) {
+        this.instanceContainer.setBlock(x, y, z, block, doBlockUpdates);
+    }
+
+    @Override
+    public boolean placeBlock(BlockHandler.Placement placement, boolean doBlockUpdates) {
+        return instanceContainer.placeBlock(placement, doBlockUpdates);
+    }
+
+    @Override
+    public boolean breakBlock(Player player, Point blockPosition, BlockFace blockFace, boolean doBlockUpdates) {
+        return instanceContainer.breakBlock(player, blockPosition, blockFace, doBlockUpdates);
+    }
+
+    @Override
+    public CompletableFuture<Chunk> loadChunk(int chunkX, int chunkZ) {
+        return instanceContainer.loadChunk(chunkX, chunkZ);
+    }
+
+    @Override
+    public CompletableFuture<@Nullable Chunk> loadOptionalChunk(int chunkX, int chunkZ) {
+        return instanceContainer.loadOptionalChunk(chunkX, chunkZ);
+    }
+
+    @Override
+    public void unloadChunk(Chunk chunk) {
+        instanceContainer.unloadChunk(chunk);
+    }
+
+    @Override
+    public Chunk getChunk(int chunkX, int chunkZ) {
+        return instanceContainer.getChunk(chunkX, chunkZ);
+    }
+
+    @Override
+    public CompletableFuture<Void> saveInstance() {
+        return instanceContainer.saveInstance();
+    }
+
+    @Override
+    public CompletableFuture<Void> saveChunkToStorage(Chunk chunk) {
+        return instanceContainer.saveChunkToStorage(chunk);
+    }
+
+    @Override
+    public CompletableFuture<Void> saveChunksToStorage() {
+        return instanceContainer.saveChunksToStorage();
+    }
+
+    @Override
+    public void setChunkSupplier(ChunkSupplier chunkSupplier) {
+        instanceContainer.setChunkSupplier(chunkSupplier);
+    }
+
+    @Override
+    public ChunkSupplier getChunkSupplier() {
+        return instanceContainer.getChunkSupplier();
+    }
+
+    @Override
+    public @Nullable Generator generator() {
+        return instanceContainer.generator();
+    }
+
+    @Override
+    public void setGenerator(@Nullable Generator generator) {
+        instanceContainer.setGenerator(generator);
+    }
+
+    @ApiStatus.Experimental
+    @Override
+    public CompletableFuture<Void> generateChunk(int chunkX, int chunkZ, Generator generator) {
+        return instanceContainer.generateChunk(chunkX, chunkZ, generator);
+    }
+
+    @Override
+    public Collection<Chunk> getChunks() {
+        return instanceContainer.getChunks();
+    }
+
+    @Override
+    public void enableAutoChunkLoad(boolean enable) {
+        instanceContainer.enableAutoChunkLoad(enable);
+    }
+
+    @Override
+    public boolean hasEnabledAutoChunkLoad() {
+        return instanceContainer.hasEnabledAutoChunkLoad();
+    }
+
+    @Override
+    public boolean isInVoid(Point point) {
+        return instanceContainer.isInVoid(point);
+    }
+
+    /**
+     * Gets the {@link InstanceContainer} from where this instance takes its chunks from.
+     *
+     * @return the associated {@link InstanceContainer}
+     */
+    public InstanceContainer getInstanceContainer() {
+        return instanceContainer;
+    }
+
+    /**
+     * Gets if two instances share the same chunks.
+     *
+     * @param instance1 the first instance
+     * @param instance2 the second instance
+     * @return true if the two instances share the same chunks
+     */
+    public static boolean areLinked(Instance instance1, Instance instance2) {
+        // SharedInstance check
+        if (instance1 instanceof InstanceContainer && instance2 instanceof SharedInstance shared2) {
+            return shared2.getInstanceContainer().equals(instance1);
+        } else if (instance2 instanceof InstanceContainer && instance1 instanceof SharedInstance shared1) {
+            return shared1.getInstanceContainer().equals(instance2);
+        } else if (instance1 instanceof SharedInstance shared1 && instance2 instanceof SharedInstance shared2) {
+            final InstanceContainer container1 = shared1.getInstanceContainer();
+            final InstanceContainer container2 = shared2.getInstanceContainer();
+            return container1.equals(container2);
+        }
+
+        // InstanceContainer check (copied from)
+        if (instance1 instanceof InstanceContainer container1 && instance2 instanceof InstanceContainer container2) {
+            if (container1.getSrcInstance() != null) {
+                return container1.getSrcInstance().equals(container2)
+                        && container1.getLastBlockChangeTime() == container2.getLastBlockChangeTime();
+            } else if (container2.getSrcInstance() != null) {
+                return container2.getSrcInstance().equals(container1)
+                        && container2.getLastBlockChangeTime() == container1.getLastBlockChangeTime();
+            }
+        }
+        return false;
+    }
+}
