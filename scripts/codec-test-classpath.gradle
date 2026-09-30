@@ -1,0 +1,9 @@
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('java') {
+        project.tasks.register('nightstormClasspath') {
+            doLast {
+                println('NIGHTSTORM_CP=' + project.extensions.getByType(org.gradle.api.tasks.SourceSetContainer).getByName('main').runtimeClasspath.asPath)
+            }
+        }
+    }
+}

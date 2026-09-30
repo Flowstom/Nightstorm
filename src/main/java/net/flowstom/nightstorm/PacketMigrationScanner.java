@@ -85,14 +85,15 @@ final class PacketMigrationScanner {
             final List<RecordComponentNode> afterComponents = components(after);
             final Optional<List<String>> beforeShape = streamShape(baseline, baselineOwner, new HashSet<>());
             final Optional<List<String>> afterShape = streamShape(target, targetOwner, new HashSet<>());
-            if (wireEquivalent(beforeShape, afterShape)) return;
+            final var wireProjection = WireMigration.plan(before, after, target::readIfPresent);
+            if (wireEquivalent(beforeShape, afterShape) && wireProjection.isEmpty()) return;
             final boolean[] migrated = {false};
             final java.util.function.Consumer<Migration> accept = migration -> {
                 migrated[0] = true;
                 output.accept(migration);
             };
             final Optional<Migration> semantic = semanticMigration(baseline, target, before, after,
-                    beforeComponents, afterComponents, path);
+                    beforeComponents, afterComponents, path, wireProjection);
             if (semantic.isPresent()) {
                 accept.accept(semantic.get());
                 return;
@@ -184,9 +185,7 @@ final class PacketMigrationScanner {
     private static Optional<Migration> semanticMigration(Classes baseline, Classes target, ClassNode before,
                                                           ClassNode after, List<RecordComponentNode> beforeComponents,
                                                           List<RecordComponentNode> afterComponents,
-                                                          List<Integer> path) {
-        final Optional<Migration> snapshot = snapshotPacketMigration(before, after, beforeComponents, afterComponents, target, path);
-        if (snapshot.isPresent()) return snapshot;
+                                                          List<Integer> path, Optional<WireMigration> wireProjection) {
         final Optional<Migration> positioned = movedNestedFloatPair(baseline, target, before, after,
                 beforeComponents, afterComponents, path);
         if (positioned.isPresent()) return positioned;
@@ -196,108 +195,9 @@ final class PacketMigrationScanner {
         final Optional<Migration> positionPath = linearPositionPath(baseline, target, before, after,
                 beforeComponents, afterComponents, path);
         if (positionPath.isPresent()) return positionPath;
-        return appendedPrimitive(baseline, target, before, after, beforeComponents, afterComponents, path);
-    }
-
-    // These manual-to-composite transitions also change field order and encoding. Match the
-    // complete known layout before applying a compatibility serializer to the retained API.
-    private static Optional<Migration> snapshotPacketMigration(ClassNode before, ClassNode after,
-            List<RecordComponentNode> oldFields, List<RecordComponentNode> newFields, Classes target,
-            List<Integer> path) {
-        if (!path.isEmpty() || !before.name.equals(after.name) || !compositeOrder(after, newFields)) return Optional.empty();
-        if (before.name.equals("net/minecraft/network/protocol/game/ServerboundAcceptTeleportationPacket")
-                && fieldLayout(oldFields).equals(List.of("id:I"))
-                && fieldLayout(newFields).equals(List.of("id:I", "x:D", "y:D", "z:D", "yRot:F", "xRot:F"))
-                && manualCalls(before, "read").equals(List.of("readVarInt"))
-                && manualCalls(before, "write").equals(List.of("writeVarInt"))
-                && compositeFields(after, newFields, List.of("VAR_INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"))) {
-            return Optional.of(Migration.payload(Kind.TELEPORT_POSITION, -1));
-        }
-        final String particle = "net/minecraft/core/particles/ParticleOptions";
-        if (!before.name.equals("net/minecraft/network/protocol/game/ClientboundLevelParticlesPacket")
-                || !fieldLayout(oldFields).equals(List.of("particle:L" + particle + ";", "overrideLimiter:Z", "alwaysShow:Z",
-                    "x:D", "y:D", "z:D", "xDist:F", "yDist:F", "zDist:F", "maxSpeed:F", "count:I"))
-                || !fieldLayout(newFields).equals(List.of("particle:L" + particle + ";", "overrideLimiter:Z",
-                    "alwaysShow:Z", "x:D", "y:D", "z:D", "xDist:F", "yDist:F", "zDist:F", "xMaxSpeed:F",
-                    "yMaxSpeed:F", "zMaxSpeed:F", "count:I", "randomizationType:L" + after.name + "$RandomizationType;"))
-                || !manualCalls(before, "read").equals(List.of("readBoolean", "readBoolean", "readDouble", "readDouble",
-                    "readDouble", "readFloat", "readFloat", "readFloat", "readFloat", "readInt"))
-                || !manualCalls(before, "write").equals(List.of("writeBoolean", "writeBoolean", "writeDouble", "writeDouble",
-                    "writeDouble", "writeFloat", "writeFloat", "writeFloat", "writeFloat", "writeInt"))) return Optional.empty();
-        final String randomization = after.name + "$RandomizationType";
-        if (!componentReferencesCodec(after, newFields.getFirst(), "net/minecraft/core/particles/ParticleTypes", "STREAM_CODEC")
-                || !compositeFields(after, newFields.subList(1, 13), List.of("BOOL", "BOOL", "DOUBLE", "DOUBLE", "DOUBLE",
-                    "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "VAR_INT"))
-                || !componentReferencesCodec(after, newFields.getLast(), randomization, "STREAM_CODEC")) return Optional.empty();
-        final ClassNode mode = target.read(randomization);
-        if (!usesIdMapper(mode)) return Optional.empty();
-        final Integer defaultId = enumIds(mode).get("DEFAULT");
-        if (defaultId == null || !legacyParticleConstructor(after, randomization)) return Optional.empty();
-        return Optional.of(Migration.payload(Kind.PARTICLE_AXES, defaultId));
-    }
-
-    private static List<String> fieldLayout(List<RecordComponentNode> fields) {
-        return fields.stream().map(field -> field.name + ":" + field.descriptor).toList();
-    }
-
-    private static List<String> manualCalls(ClassNode owner, String prefix) {
-        final List<String> calls = new ArrayList<>();
-        for (MethodNode method : owner.methods) {
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof MethodInsnNode call && call.owner.endsWith("FriendlyByteBuf")
-                        && call.name.startsWith(prefix)) calls.add(call.name);
-            }
-        }
-        return calls;
-    }
-
-    private static boolean compositeOrder(ClassNode owner, List<RecordComponentNode> fields) {
-        int index = 0;
-        for (MethodNode method : owner.methods) {
-            if (!method.name.equals("<clinit>")) continue;
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (!(instruction instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
-                        || !field.desc.equals(STREAM_CODEC_DESCRIPTOR)) continue;
-                if (index >= fields.size()) return false;
-                final RecordComponentNode component = fields.get(index++);
-                if (!(nextReal(instruction) instanceof InvokeDynamicInsnNode accessor)
-                        || !dynamicReferencesAccessor(accessor, owner.name, component.name, component.descriptor)) return false;
-            }
-        }
-        return index == fields.size();
-    }
-
-    private static boolean compositeFields(ClassNode owner, List<RecordComponentNode> fields, List<String> codecs) {
-        for (int i = 0; i < fields.size(); i++) {
-            if (!componentReferencesCodec(owner, fields.get(i), CODEC_OWNER, codecs.get(i))) return false;
-        }
-        return true;
-    }
-
-    private static boolean legacyParticleConstructor(ClassNode owner, String randomization) {
-        for (MethodNode method : owner.methods) {
-            if (!method.name.equals("<init>") || !method.desc.equals(
-                    "(Lnet/minecraft/core/particles/ParticleOptions;ZZDDDFFFFI)V")) continue;
-            final List<String> arguments = new ArrayList<>();
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof VarInsnNode variable) arguments.add((switch (variable.getOpcode()) {
-                    case Opcodes.ALOAD -> "reference";
-                    case Opcodes.ILOAD -> "int";
-                    case Opcodes.DLOAD -> "double";
-                    case Opcodes.FLOAD -> "float";
-                    default -> "unsupported";
-                }) + ":" + variable.var);
-                else if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
-                        && field.owner.equals(randomization)) arguments.add(field.name);
-                else if (instruction instanceof MethodInsnNode call && call.owner.equals(owner.name)
-                        && call.name.equals("<init>")) {
-                    return arguments.equals(List.of("reference:0", "reference:1", "int:2", "int:3",
-                            "double:4", "double:6", "double:8", "float:10", "float:11", "float:12",
-                            "float:13", "float:13", "float:13", "int:14", "DEFAULT"));
-                }
-            }
-        }
-        return false;
+        final var appended = appendedPrimitive(baseline, target, before, after, beforeComponents, afterComponents, path);
+        if (appended.isPresent()) return appended;
+        return wireProjection.map(plan -> Migration.wire(plan, path));
     }
 
     private static Optional<Migration> movedNestedFloatPair(Classes baseline, Classes target, ClassNode before,
@@ -590,7 +490,7 @@ final class PacketMigrationScanner {
         return null;
     }
 
-    private static boolean usesIdMapper(ClassNode owner) {
+    static boolean usesIdMapper(ClassNode owner) {
         for (MethodNode method : owner.methods) {
             for (AbstractInsnNode instruction : method.instructions) {
                 if (instruction instanceof MethodInsnNode call && call.owner.equals(CODEC_OWNER)
@@ -928,6 +828,7 @@ final class PacketMigrationScanner {
                 }
             }
             final List<String> result = new ArrayList<>();
+            final var objectScopes = new ArrayDeque<Integer>();
             for (AbstractInsnNode instruction = start; instruction != null && instruction != assignment;
                  instruction = instruction.getNext()) {
                 if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
@@ -940,12 +841,21 @@ final class PacketMigrationScanner {
                         else result.addAll(nested.get());
                     }
                 } else if (instruction instanceof TypeInsnNode type && instruction.getOpcode() == Opcodes.NEW) {
+                    objectScopes.push(result.size());
                     final ClassNode codec = classes.readIfPresent(type.desc);
                     if (codec != null && codec.interfaces.stream()
                             .anyMatch(name -> name.equals("net/minecraft/network/codec/StreamCodec"))) {
                         final Optional<List<String>> manual = manualBufferShape(classes, codec);
                         if (manual.isEmpty()) result.add(unknownSegment("codec", type.desc));
                         else result.addAll(manual.get());
+                    }
+                } else if (instruction instanceof MethodInsnNode constructor && constructor.name.equals("<init>")) {
+                    if (!objectScopes.isEmpty()) {
+                        final int mark = objectScopes.pop();
+                        // Data-row codecs belong to a dispatch catalog, not the enclosing packet.
+                        if (!WireSchema.codecDescriptor("L" + constructor.owner + ";", classes::readIfPresent)) {
+                            result.subList(mark, result.size()).clear();
+                        }
                     }
                 } else if (instruction instanceof MethodInsnNode call
                         && Type.getReturnType(call.desc).getDescriptor().equals(STREAM_CODEC_DESCRIPTOR)) {
@@ -980,7 +890,7 @@ final class PacketMigrationScanner {
         }
         if (!call.owner.equals("net/minecraft/network/codec/StreamCodec")) return false;
         return call.name.equals("composite") || call.name.equals("apply") || call.name.equals("map")
-                || call.name.equals("dispatch") || call.name.equals("recursive");
+                || call.name.equals("dispatch") || call.name.equals("recursive") || call.name.equals("cast");
     }
 
     private static String unknownSegment(String kind, String value) {
@@ -1318,7 +1228,7 @@ final class PacketMigrationScanner {
         return value;
     }
 
-    private static Map<String, Integer> enumIds(ClassNode enumClass) {
+    static Map<String, Integer> enumIds(ClassNode enumClass) {
         final List<FieldNode> idFields = enumClass.fields.stream()
                 .filter(field -> field.desc.equals("I"))
                 .filter(field -> (field.access & Opcodes.ACC_STATIC) == 0)
@@ -1618,16 +1528,21 @@ final class PacketMigrationScanner {
         LINEAR_POSITION_PATH,
         APPENDED_BOOLEAN,
         MOVED_NESTED_FLOATS,
-        TELEPORT_POSITION,
-        PARTICLE_AXES
+        WIRE_PROJECTION
     }
 
     record Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
                      Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
-                     boolean defaultValue, int falseId, int trueId) {
+                     boolean defaultValue, int falseId, int trueId, WireMigration wire) {
         Migration {
             path = List.copyOf(path);
             ids = Map.copyOf(ids);
+        }
+
+        Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
+                  Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
+                  boolean defaultValue, int falseId, int trueId) {
+            this(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue, falseId, trueId, null);
         }
 
         Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
@@ -1636,8 +1551,12 @@ final class PacketMigrationScanner {
             this(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue, 0, 1);
         }
 
-        static Migration payload(Kind kind, int discriminator) {
-            return new Migration(null, kind, List.of(), Map.of(), "", -1, discriminator, false, -1, -1);
+        static Migration wire(WireMigration plan) {
+            return wire(plan, List.of());
+        }
+
+        static Migration wire(WireMigration plan, List<Integer> path) {
+            return new Migration(null, Kind.WIRE_PROJECTION, path, Map.of(), "", -1, -1, false, -1, -1, plan);
         }
 
         static Migration optionalEnum(List<Integer> path, Map<String, Integer> ids, String targetEnum) {
@@ -1668,7 +1587,7 @@ final class PacketMigrationScanner {
 
         Migration withPacket(PacketUpdater.RetainedPacket packet) {
             return new Migration(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue,
-                    falseId, trueId);
+                    falseId, trueId, wire);
         }
     }
 

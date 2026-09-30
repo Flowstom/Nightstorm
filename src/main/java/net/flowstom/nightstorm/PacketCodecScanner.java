@@ -1,10 +1,6 @@
 package net.flowstom.nightstorm;
 
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.RecordComponentVisitor;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -22,62 +18,28 @@ final class PacketCodecScanner {
             final var entry = jar.getJarEntry(entryName);
             if (entry == null) throw new IllegalStateException("Missing packet codec class " + codecOwner);
             try (var input = jar.getInputStream(entry)) {
-                final List<String> componentNames = new ArrayList<>();
-                final List<String> componentDescriptors = new ArrayList<>();
-                final List<CodecType> codecs = new ArrayList<>();
-                new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
-                    @Override
-                    public RecordComponentVisitor visitRecordComponent(String name, String descriptor, String signature) {
-                        componentNames.add(name);
-                        componentDescriptors.add(descriptor);
-                        return null;
+                final var node = new org.objectweb.asm.tree.ClassNode();
+                new ClassReader(input).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+                final WireSchema schema = WireSchema.scan(node, name -> {
+                    final var nested = jar.getJarEntry(name + ".class");
+                    if (nested == null) return null;
+                    try (var bytes = jar.getInputStream(nested)) {
+                        final var type = new org.objectweb.asm.tree.ClassNode();
+                        new ClassReader(bytes).accept(type, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+                        return type;
+                    } catch (IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
                     }
-
-                    @Override
-                    public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                        if (!"<clinit>".equals(name)) return null;
-                        return new MethodVisitor(Opcodes.ASM9) {
-                            private String pendingOperation;
-
-                            @Override
-                            public void visitFieldInsn(int opcode, String owner, String fieldName, String fieldDescriptor) {
-                                if (opcode == Opcodes.GETSTATIC && fieldDescriptor.endsWith("StreamCodec;")) {
-                                    codecs.add(knownCodec(owner, fieldName));
-                                }
-                            }
-
-                            @Override
-                            public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor, boolean isInterface) {
-                                if (owner.equals("net/minecraft/network/codec/ByteBufCodecs") && methodName.equals("list")) {
-                                    pendingOperation = "list";
-                                } else if (owner.equals("net/minecraft/network/codec/StreamCodec") && methodName.equals("apply")
-                                        && "list".equals(pendingOperation)) {
-                                    if (codecs.isEmpty()) throw new UnsupportedCodecException("Codec operation has no input codec");
-                                    replaceLast(codecs, codecs.getLast().list());
-                                    pendingOperation = null;
-                                } else if (owner.equals("net/minecraft/network/codec/ByteBufCodecs") && methodName.equals("optional")) {
-                                    throw new UnsupportedCodecException("optional codecs are not supported yet");
-                                }
-                            }
-                        };
-                    }
-                }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-
-                if (componentNames.size() != codecs.size()) {
-                    throw new UnsupportedCodecException(codecOwner + " has " + componentNames.size()
-                            + " record components but " + codecs.size() + " translatable codecs");
-                }
+                }).orElseThrow(() ->
+                        new UnsupportedCodecException("Cannot prove field-to-codec bindings"));
                 final List<PacketField> fields = new ArrayList<>();
-                for (int index = 0; index < componentNames.size(); index++) {
-                    final CodecType codec = codecs.get(index);
-                    if (!codec.supported()) {
-                        throw new UnsupportedCodecException("Unsupported codec " + codec.source() + " in " + codecOwner);
+                for (WireSchema.Field field : schema.fields()) {
+                    final var component = schema.components().get(field.component());
+                    final CodecType codec = translate(field.codec());
+                    if (!codec.supported() || !codec.vanillaDescriptor().equals(component.descriptor())) {
+                        throw new UnsupportedCodecException("Unsupported or mismatched codec for " + component.name());
                     }
-                    if (!codec.vanillaDescriptor().equals(componentDescriptors.get(index))) {
-                        throw new UnsupportedCodecException(codec.source() + " produces " + codec.vanillaDescriptor()
-                                + " but component " + componentNames.get(index) + " is " + componentDescriptors.get(index));
-                    }
-                    fields.add(new PacketField(componentNames.get(index), codec.javaType(), codec.networkType()));
+                    fields.add(new PacketField(component.name(), codec.javaType(), codec.networkType()));
                 }
                 return new PacketShape(fields);
             }
@@ -86,24 +48,23 @@ final class PacketCodecScanner {
         }
     }
 
+    static CodecType translate(WireSchema.Codec codec) {
+        CodecType result;
+        if (codec.owner().equals(WireSchema.BYTE_CODECS) && codec.name().equals("map") && codec.arguments().size() == 2) {
+            final CodecType key = translate(codec.arguments().get(0)), value = translate(codec.arguments().get(1));
+            result = key.supported() && value.supported()
+                    ? new CodecType("java.util.Map<" + CodecType.boxed(key.javaType()) + ", " + CodecType.boxed(value.javaType()) + ">",
+                    key.networkType() + ".mapValue(" + value.networkType() + ")", "map", "Ljava/util/Map;", true)
+                    : unsupported(codec.owner(), codec.name());
+        } else result = knownCodec(codec.owner(), codec.name());
+        for (String operation : codec.operations()) {
+            if (operation.equals("list")) result = result.list();
+            else return unsupported(codec.owner(), codec.name());
+        }
+        return result;
+    }
+
     private static CodecType knownCodec(String owner, String fieldName) {
-        if (owner.equals("net/minecraft/resources/Identifier") && fieldName.equals("STREAM_CODEC")) {
-            return new CodecType("net.kyori.adventure.key.Key", "NetworkBuffer.KEY", "Identifier.STREAM_CODEC",
-                    "Lnet/minecraft/resources/Identifier;", true);
-        }
-        if (owner.equals("net/minecraft/core/UUIDUtil") && fieldName.equals("STREAM_CODEC")) {
-            return new CodecType("java.util.UUID", "NetworkBuffer.UUID", "UUIDUtil.STREAM_CODEC", "Ljava/util/UUID;", true);
-        }
-        if (owner.equals("net/minecraft/world/InteractionHand") && fieldName.equals("STREAM_CODEC")) {
-            return new CodecType("net.minestom.server.entity.PlayerHand", "NetworkBuffer.Enum(PlayerHand.class)",
-                    "InteractionHand.STREAM_CODEC", "Lnet/minecraft/world/InteractionHand;", true);
-        }
-        if (owner.equals("net/minecraft/world/item/component/SwingAnimation")
-                && fieldName.equals("STREAM_CODEC")) {
-            return new CodecType("net.minestom.server.item.component.SwingAnimation",
-                    "SwingAnimation.NETWORK_TYPE", "SwingAnimation.STREAM_CODEC",
-                    "Lnet/minecraft/world/item/component/SwingAnimation;", true);
-        }
         if (owner.equals("net/minecraft/network/codec/ByteBufCodecs")) {
             return switch (fieldName) {
                 case "BOOL" -> primitive("boolean", "BOOLEAN", fieldName, "Z");
@@ -134,11 +95,6 @@ final class PacketCodecScanner {
         return new CodecType("", "", owner.replace('/', '.') + "#" + fieldName, "", false);
     }
 
-    private static void replaceLast(List<CodecType> codecs, CodecType replacement) {
-        if (codecs.isEmpty()) throw new UnsupportedCodecException("Codec operation has no input codec");
-        codecs.set(codecs.size() - 1, replacement);
-    }
-
     record PacketShape(List<PacketField> fields, String warning) {
         PacketShape(List<PacketField> fields) {
             this(fields, null);
@@ -160,7 +116,7 @@ final class PacketCodecScanner {
     record PacketField(String name, String javaType, String networkType) {
     }
 
-    private record CodecType(String javaType, String networkType, String source, String vanillaDescriptor, boolean supported) {
+    record CodecType(String javaType, String networkType, String source, String vanillaDescriptor, boolean supported) {
         CodecType list() {
             return supported
                     ? new CodecType("java.util.List<" + boxed(javaType) + ">", networkType + ".list()",

@@ -73,9 +73,42 @@ final class PacketUpdater {
                 throw new IllegalStateException("Unable to inspect packet codec " + owner, exception);
             }
         }), retainedPackets);
-        RetainedPacketMigrator.apply(sourceRoot,
-                PacketMigrationScanner.scan(baselineJar, targetJar, retainedPackets));
-        return result;
+        final var migrations = PacketMigrationScanner.scan(baselineJar, targetJar, retainedPackets);
+        RetainedPacketMigrator.apply(sourceRoot, migrations);
+        final var warnings = new ArrayList<>(result.warnings());
+        for (var migration : migrations) {
+            if (migration.wire() == null) continue;
+            final var plan = migration.wire();
+            final var retained = plan.bindings().stream().filter(b -> b.source() >= 0).map(WireMigration.Binding::source)
+                    .collect(java.util.stream.Collectors.toSet());
+            final var removed = java.util.stream.IntStream.range(0, plan.baseline().components().size())
+                    .filter(index -> !retained.contains(index)).mapToObj(index -> plan.baseline().components().get(index).name()).toList();
+            final var collections = plan.bindings().stream().filter(WireMigration.Binding::missing)
+                    .filter(b -> b.javaType().startsWith("java.util.Map<") || b.javaType().startsWith("java.util.List<"))
+                    .map(b -> plan.target().components().get(b.component()).name()).toList();
+            if (!removed.isEmpty() || !collections.isEmpty()) warnings.add(migration.packet().className() + " at " + migration.path()
+                    + ": Source API updated for removed fields " + removed + " and added collections " + collections
+                    + "; legacy constructors ignore removed arguments and use empty added collections.");
+        }
+        final var savedPlans = RetainedPacketMigrator.readWirePlans(sourceRoot);
+        for (var retained : retainedPackets) {
+            final var plan = savedPlans.get(RetainedPacketMigrator.wireKey(retained));
+            if (plan == null) continue;
+            final var additions = plan.bindings().stream().filter(WireMigration.Binding::missing)
+                    .map(binding -> plan.target().components().get(binding.component()).name()).toList();
+            if (!additions.isEmpty()) warnings.add(retained.className() + ": Retained API discards added fields "
+                    + additions + " on decode; encoding is disabled because upstream supplies no proven defaults.");
+            if (plan.bindings().stream().anyMatch(binding -> binding.constant() != null)
+                    || plan.bindings().stream().filter(binding -> binding.source() >= 0).count() > plan.baseline().components().size()) {
+                warnings.add(retained.className() + ": Compatibility constructor mapping applied; decoding rejects values outside the retained API's representation.");
+            }
+        }
+        if (!warnings.equals(result.warnings())) {
+            final String text = "## Packet compatibility warnings\n\n" + warnings.stream()
+                    .map(warning -> "- " + warning + "\n").collect(java.util.stream.Collectors.joining());
+            Files.writeString(sourceRoot.resolve(".nightstorm/packet-warnings.md"), text);
+        }
+        return new UpdateResult(result.packets(), result.generatedPackets(), warnings);
     }
 
     static UpdateResult update(Path sourceRoot, PacketScanner.PacketReport baseline, PacketScanner.PacketReport target,

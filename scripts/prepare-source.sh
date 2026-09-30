@@ -3,7 +3,9 @@ set -euo pipefail
 
 plan_file=${1:?usage: prepare-source.sh <plan.json> <target-directory>}
 target_directory=${2:?usage: prepare-source.sh <plan.json> <target-directory>}
+target_directory=$(realpath -m -- "$target_directory")
 nightstorm_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+export NIGHTSTORM_ENUM_DATA_STATE="$target_directory/.nightstorm/enum-data-accessors.json"
 
 read_plan() {
   jq -r "$1" "$plan_file"
@@ -55,7 +57,7 @@ perl -0pi -e 's/^minecraft = ".*"/minecraft = "'"$baseline_minecraft_version"'"/
 pushd "$data_generator_directory" >/dev/null
 NIGHTSTORM_MINSTOM_SOURCE="$target_directory" EULA=true ./gradlew generateData --no-daemon
 popd >/dev/null
-baseline_server_jar="$HOME/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-server-deobf/$baseline_minecraft_version/minecraft-server-deobf-$baseline_minecraft_version.jar"
+baseline_server_jar="$HOME/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/$baseline_minecraft_version/minecraft-merged-deobf-$baseline_minecraft_version.jar"
 test -f "$baseline_server_jar"
 mkdir -p "$target_directory/.nightstorm"
 cp "$baseline_server_jar" "$target_directory/.nightstorm/baseline-minecraft-server.jar"

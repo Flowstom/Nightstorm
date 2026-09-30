@@ -20,7 +20,7 @@ class RetainedPacketMigratorTest {
         final Path teleport = directory.resolve("Teleport.java");
         write(teleport, """
                 package example;
-                record Teleport(int id) {
+                record Teleport(int id) implements ClientPacket.Play {
                     static final NetworkBuffer.Type<Teleport> SERIALIZER = new NetworkBuffer.Type<>() {
                         public void write(NetworkBuffer buffer, Teleport value) { buffer.write(NetworkBuffer.VAR_INT, value.id); }
                         public Teleport read(NetworkBuffer buffer) { return new Teleport(buffer.read(NetworkBuffer.VAR_INT)); }
@@ -28,22 +28,57 @@ class RetainedPacketMigratorTest {
                 }
                 """);
         final Path particle = directory.resolve("ParticlePacket.java");
+        write(directory.resolve("Payload.java"), """
+                package example;
+                record Payload(int id) {
+                    static final NetworkBuffer.Type<Payload> NETWORK_TYPE = new NetworkBuffer.Type<>() {
+                        public void write(NetworkBuffer buffer, Payload value) {
+                            buffer.write(NetworkBuffer.VAR_INT, value.id());
+                            value.writeData(buffer);
+                        }
+                        public Payload read(NetworkBuffer buffer) {
+                            return new Payload(buffer.read(NetworkBuffer.VAR_INT)).readData(buffer);
+                        }
+                    };
+                    Payload readData(NetworkBuffer buffer) { return this; }
+                    void writeData(NetworkBuffer buffer) { }
+                }
+                """);
         write(particle, """
                 package example;
                 import java.util.Objects;
                 import static example.NetworkBuffer.*;
-                record ParticlePacket(Particle particle, boolean overrideLimiter, boolean longDistance,
+                record ParticlePacket(Payload payload, boolean overrideLimiter, boolean longDistance,
                         double x, double y, double z, float offsetX, float offsetY, float offsetZ,
                         float maxSpeed, int particleCount) {
-                    static final NetworkBuffer.Type<ParticlePacket> SERIALIZER = null;
+                    static final NetworkBuffer.Type<ParticlePacket> SERIALIZER = new NetworkBuffer.Type<>() {
+                        public void write(NetworkBuffer buffer, ParticlePacket value) {
+                            buffer.write(BOOLEAN, value.overrideLimiter);
+                            buffer.write(BOOLEAN, value.longDistance);
+                            buffer.write(DOUBLE, value.x);
+                            buffer.write(DOUBLE, value.y);
+                            buffer.write(DOUBLE, value.z);
+                            buffer.write(FLOAT, value.offsetX);
+                            buffer.write(FLOAT, value.offsetY);
+                            buffer.write(FLOAT, value.offsetZ);
+                            buffer.write(FLOAT, value.maxSpeed);
+                            buffer.write(INT, value.particleCount);
+                            buffer.write(VAR_INT, value.payload.id());
+                            value.payload.writeData(buffer);
+                        }
+                        public ParticlePacket read(NetworkBuffer buffer) { throw new UnsupportedOperationException(); }
+                    };
                 }
                 """);
         final var migrations = List.of(
-                semanticMigration("Teleport", PacketMigrationScanner.Kind.TELEPORT_POSITION, -1, -1, false),
-                semanticMigration("ParticlePacket", PacketMigrationScanner.Kind.PARTICLE_AXES, -1, 7, false));
+                PacketMigrationScanner.Migration.wire(WireFixtures.acknowledgement().plan()).withPacket(
+                        new PacketUpdater.RetainedPacket("Teleport", "Teleport.SERIALIZER", "before", "after")),
+                PacketMigrationScanner.Migration.wire(WireFixtures.effect().plan()).withPacket(
+                        new PacketUpdater.RetainedPacket("ParticlePacket", "ParticlePacket.SERIALIZER", "before", "after")));
         RetainedPacketMigrator.apply(root, migrations);
         final String firstTeleport = Files.readString(teleport);
         final String firstParticle = Files.readString(particle);
+        assertTrue(firstParticle.contains("buffer.write(Payload.NETWORK_TYPE, value.payload())"));
         RetainedPacketMigrator.apply(root, migrations);
         assertEquals(firstTeleport, Files.readString(teleport));
         assertEquals(firstParticle, Files.readString(particle));
@@ -58,7 +93,13 @@ class RetainedPacketMigratorTest {
                         buffer.codecs.addAll(List.of("VAR_INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"));
                         if (Teleport.SERIALIZER.read(buffer).id() != 123 || buffer.index != 6) throw new AssertionError();
                         buffer = new NetworkBuffer();
-                        var packet = new ParticlePacket(new Particle(300), true, false, 1d, 2d, 3d, 4f, 5f, 6f, 7f, 500);
+                        try {
+                            Teleport.SERIALIZER.write(buffer, new Teleport(123));
+                            throw new AssertionError("Must not guess defaults");
+                        } catch (UnsupportedOperationException expected) {
+                            if (!buffer.values.isEmpty()) throw new AssertionError("Failed write must not emit bytes");
+                        }
+                        var packet = new ParticlePacket(new Payload(300), true, false, 1d, 2d, 3d, 4f, 5f, 6f, 7f, 500);
                         ParticlePacket.SERIALIZER.write(buffer, packet);
                         if (!buffer.codecs.equals(List.of("VAR_INT", "BOOLEAN", "BOOLEAN", "DOUBLE", "DOUBLE", "DOUBLE",
                                 "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "VAR_INT", "VAR_INT"))) throw new AssertionError(buffer.codecs);
@@ -72,11 +113,7 @@ class RetainedPacketMigratorTest {
                         } catch (IllegalArgumentException expected) { }
                     }
                 }
-                record Particle(int id) {
-                    static Particle fromId(int id) { return new Particle(id); }
-                    Particle readData(NetworkBuffer buffer) { return this; }
-                    void writeData(NetworkBuffer buffer) { }
-                }
+                interface ClientPacket { interface Play { } }
                 class NetworkBuffer {
                     interface Type<T> {
                         void write(NetworkBuffer buffer, T value);
@@ -90,6 +127,8 @@ class RetainedPacketMigratorTest {
                     final List<String> codecs = new ArrayList<>();
                     final List<Object> values = new ArrayList<>();
                     int index;
+                    <T> void write(Type<T> type, T value) { type.write(this, value); }
+                    <T> T read(Type<T> type) { return type.read(this); }
                     <T> void write(Codec<T> codec, T value) { codecs.add(codec.name()); values.add(value); }
                     @SuppressWarnings("unchecked")
                     <T> T read(Codec<T> codec) {
@@ -100,10 +139,34 @@ class RetainedPacketMigratorTest {
                 """);
         final Path classes = Files.createDirectories(root.resolve("classes"));
         assertEquals(0, javax.tools.ToolProvider.getSystemJavaCompiler().run(null, null, null,
-                "-d", classes.toString(), teleport.toString(), particle.toString(), directory.resolve("WireCheck.java").toString()));
+                "-d", classes.toString(), teleport.toString(), particle.toString(), directory.resolve("Payload.java").toString(),
+                directory.resolve("WireCheck.java").toString()));
         try (var loader = new java.net.URLClassLoader(new java.net.URL[]{classes.toUri().toURL()})) {
             loader.loadClass("example.WireCheck").getMethod("verify").invoke(null);
         }
+    }
+
+    @Test
+    void rejectsSourceFieldOrderMismatchWithoutWritingAdapterMetadata() throws Exception {
+        final Path root = sourceRoot();
+        final Path packet = root.resolve("src/main/java/example/Pair.java");
+        write(packet, """
+                package example;
+                record Pair(int left, int right) {
+                    static final NetworkBuffer.Type<Pair> SERIALIZER = NetworkBufferTemplate.template(
+                        NetworkBuffer.INT, Pair::right, NetworkBuffer.INT, Pair::left, Pair::new);
+                }
+                """);
+        final String original = Files.readString(packet);
+        final var fields = List.of("left:I", "right:I");
+        final var before = WireFixtures.node("synthetic/Pair", fields, List.of("INT", "INT"), List.of(0, 1), true);
+        final var after = WireFixtures.node("synthetic/Pair", fields, List.of("INT", "INT"), List.of(1, 0), true);
+        final var migration = PacketMigrationScanner.Migration.wire(WireMigration.plan(before, after, name -> null).orElseThrow())
+                .withPacket(new PacketUpdater.RetainedPacket("Pair", "Pair.SERIALIZER", before.name, after.name));
+        final var failure = assertThrows(IllegalStateException.class, () -> RetainedPacketMigrator.apply(root, List.of(migration)));
+        assertTrue(failure.getMessage().contains("field bindings disagree"));
+        assertEquals(original, Files.readString(packet));
+        assertTrue(Files.notExists(root.resolve(".nightstorm/wire-adapters.json")));
     }
 
     @Test

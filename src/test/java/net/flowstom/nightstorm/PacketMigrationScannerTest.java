@@ -24,94 +24,79 @@ class PacketMigrationScannerTest {
     private static final String STREAM_CODEC = "Lnet/minecraft/network/codec/StreamCodec;";
 
     @Test
-    void migratesTeleportPositionAndRejectsDifferentEncoding() throws Exception {
-        final String owner = "net/minecraft/network/protocol/game/ServerboundAcceptTeleportationPacket";
-        final List<String> before = List.of("id:I");
-        final List<String> after = List.of("id:I", "x:D", "y:D", "z:D", "yRot:F", "xRot:F");
-        final Path baseline = jar(Map.of(owner, snapshotPacket(owner, before, List.of("VarInt"), false)));
-        final Path target = jar(Map.of(owner, snapshotPacket(owner, after,
-                List.of("VAR_INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"), true)));
-        final var packet = new PacketUpdater.RetainedPacket("Teleport", "Teleport.SERIALIZER", owner, owner);
-        assertEquals(PacketMigrationScanner.Kind.TELEPORT_POSITION,
-                PacketMigrationScanner.scan(baseline, target, List.of(packet)).getFirst().kind());
-        final Path invalid = jar(Map.of(owner, snapshotPacket(owner, after,
-                List.of("INT", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT"), true)));
-        assertThrows(IllegalStateException.class, () -> PacketMigrationScanner.scan(baseline, invalid, List.of(packet)));
+    void separatesCatalogRowsFromEnvelopeCodecsAndStillDetectsEnvelopeChanges() throws Exception {
+        final var baseline = catalogPacket(1, "STRING_UTF8");
+        final var target = catalogPacket(2, "STRING_UTF8");
+        final var changed = catalogPacket(2, "INT");
+        final var packet = new PacketUpdater.RetainedPacket("Envelope", "Envelope.CODEC", RECORD, RECORD);
+        assertEquals(List.of(), PacketMigrationScanner.scan(baseline, target, List.of(packet)));
+        assertThrows(IllegalStateException.class, () -> PacketMigrationScanner.scan(baseline, changed, List.of(packet)));
+    }
+
+    private static Path catalogPacket(int rows, String outerCodec) throws Exception {
+        final String row = "synthetic/CatalogRow";
+        final var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_RECORD, RECORD, null, "java/lang/Record", null);
+        writer.visitRecordComponent("payload", "Ljava/lang/String;", null).visitEnd();
+        final var code = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        for (int i = 0; i < rows; i++) {
+            code.visitTypeInsn(Opcodes.NEW, row);
+            code.visitInsn(Opcodes.DUP);
+            code.visitFieldInsn(Opcodes.GETSTATIC, WireSchema.BYTE_CODECS, i == 0 ? "STRING_UTF8" : "INT", STREAM_CODEC);
+            code.visitMethodInsn(Opcodes.INVOKESPECIAL, row, "<init>", "(" + STREAM_CODEC + ")V", false);
+            code.visitInsn(Opcodes.POP);
+        }
+        code.visitFieldInsn(Opcodes.GETSTATIC, WireSchema.BYTE_CODECS, outerCodec, STREAM_CODEC);
+        code.visitMethodInsn(Opcodes.INVOKESTATIC, "synthetic/EnvelopeFactory", "codec", "(" + STREAM_CODEC + ")" + STREAM_CODEC, false);
+        code.visitFieldInsn(Opcodes.PUTSTATIC, RECORD, "STREAM_CODEC", STREAM_CODEC);
+        code.visitInsn(Opcodes.RETURN);
+        code.visitMaxs(3, 0);
+        code.visitEnd();
+        writer.visitEnd();
+        final var rowClass = new ClassWriter(0);
+        rowClass.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, row, null, "java/lang/Object", null);
+        rowClass.visitEnd();
+        return jar(Map.of(RECORD, writer.toByteArray(), row, rowClass.toByteArray()));
     }
 
     @Test
-    void migratesParticleAxesWithDerivedDefaultAndRejectsChangedCountCodec() throws Exception {
-        final String owner = "net/minecraft/network/protocol/game/ClientboundLevelParticlesPacket";
-        final String particle = "particle:Lnet/minecraft/core/particles/ParticleOptions;";
-        final String mode = owner + "$RandomizationType";
-        final List<String> before = List.of(particle, "overrideLimiter:Z", "alwaysShow:Z", "x:D", "y:D", "z:D",
-                "xDist:F", "yDist:F", "zDist:F", "maxSpeed:F", "count:I");
-        final List<String> after = List.of(particle, "overrideLimiter:Z", "alwaysShow:Z", "x:D", "y:D", "z:D",
-                "xDist:F", "yDist:F", "zDist:F", "xMaxSpeed:F", "yMaxSpeed:F", "zMaxSpeed:F", "count:I",
-                "randomizationType:L" + mode + ";");
-        final Path baseline = jar(Map.of(owner, snapshotPacket(owner, before,
-                List.of("Boolean", "Boolean", "Double", "Double", "Double", "Float", "Float", "Float", "Float", "Int"), false)));
-        final List<String> codecs = new java.util.ArrayList<>(List.of("net/minecraft/core/particles/ParticleTypes#STREAM_CODEC",
-                "BOOL", "BOOL", "DOUBLE", "DOUBLE", "DOUBLE", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT", "FLOAT",
-                "VAR_INT", mode + "#STREAM_CODEC"));
-        final var packet = new PacketUpdater.RetainedPacket("ParticlePacket", "ParticlePacket.SERIALIZER", owner, owner);
-        final byte[] enumBytes = binaryEnumClass(mode, "DEFAULT", 7, "ALTERNATIVE", 3);
-        final Path target = jar(Map.of(owner, snapshotPacket(owner, after, codecs, true), mode, enumBytes));
-        final var migration = PacketMigrationScanner.scan(baseline, target, List.of(packet)).getFirst();
-        assertEquals(PacketMigrationScanner.Kind.PARTICLE_AXES, migration.kind());
-        assertEquals(7, migration.discriminator());
-        codecs.set(12, "INT");
-        final Path invalid = jar(Map.of(owner, snapshotPacket(owner, after, codecs, true), mode, enumBytes));
-        assertThrows(IllegalStateException.class, () -> PacketMigrationScanner.scan(baseline, invalid, List.of(packet)));
+    void migratesRenamedPacketsFromSchemasAndConstructorProvenance() throws Exception {
+        for (var fixture : List.of(WireFixtures.acknowledgement(), WireFixtures.effect())) {
+            var before = new ClassWriter(0);
+            fixture.before().accept(before);
+            var after = new ClassWriter(0);
+            fixture.after().accept(after);
+            final Map<String, byte[]> target = new LinkedHashMap<>();
+            target.put(fixture.after().name, after.toByteArray());
+            fixture.extra().forEach((name, node) -> {
+                var writer = new ClassWriter(0);
+                node.accept(writer);
+                target.put(name, writer.toByteArray());
+            });
+            final var packet = new PacketUpdater.RetainedPacket("RenamedPacket", "RenamedPacket.SERIALIZER",
+                    fixture.before().name, fixture.after().name);
+            final var migrations = PacketMigrationScanner.scan(jar(Map.of(fixture.before().name, before.toByteArray())),
+                    jar(target), List.of(packet));
+            assertEquals(PacketMigrationScanner.Kind.WIRE_PROJECTION, migrations.getFirst().kind());
+            assertEquals(fixture.plan(), migrations.getFirst().wire());
+        }
+        assertEquals(5, WireFixtures.acknowledgement().plan().bindings().stream().filter(WireMigration.Binding::missing).count());
+        assertEquals("7", WireFixtures.effect().plan().bindings().getLast().constant());
+        assertEquals(List.of(9, 9, 9), WireFixtures.effect().plan().bindings().subList(9, 12).stream().map(WireMigration.Binding::source).toList());
     }
 
-    private static byte[] snapshotPacket(String owner, List<String> fields, List<String> codecs, boolean composite) {
-        final var writer = new ClassWriter(0);
-        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_RECORD,
-                owner, null, "java/lang/Record", null);
-        for (String field : fields) {
-            final String[] parts = field.split(":", 2);
-            writer.visitRecordComponent(parts[0], parts[1], null).visitEnd();
-        }
-        final var method = writer.visitMethod(Opcodes.ACC_STATIC, composite ? "<clinit>" : "legacyCodec", "()V", null, null);
-        method.visitCode();
-        for (int i = 0; i < codecs.size(); i++) {
-            final String codec = codecs.get(i);
-            if (composite) {
-                final String[] reference = codec.contains("#") ? codec.split("#")
-                        : new String[]{"net/minecraft/network/codec/ByteBufCodecs", codec};
-                method.visitFieldInsn(Opcodes.GETSTATIC, reference[0], reference[1], STREAM_CODEC);
-                final String[] field = fields.get(i).split(":", 2);
-                method.visitInvokeDynamicInsn("apply", "()Ljava/util/function/Function;",
-                        new Handle(Opcodes.H_INVOKESTATIC, "synthetic/bootstrap/Factory", "bootstrap", "()V", false),
-                        new Handle(Opcodes.H_INVOKEVIRTUAL, owner, field[0], "()" + field[1], false));
-            } else {
-                for (String prefix : List.of("read", "write")) {
-                    method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/FriendlyByteBuf",
-                            prefix + codec, "()V", false);
-                }
-            }
-        }
-        if (composite) method.visitFieldInsn(Opcodes.PUTSTATIC, owner, "STREAM_CODEC", STREAM_CODEC);
-        method.visitInsn(Opcodes.RETURN);
-        method.visitMaxs(32, 0);
-        method.visitEnd();
-        if (composite && fields.size() == 14) {
-            final var constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>",
-                    "(Lnet/minecraft/core/particles/ParticleOptions;ZZDDDFFFFI)V", null, null);
-            constructor.visitCode();
-            final int[] opcodes = {25, 25, 21, 21, 24, 24, 24, 23, 23, 23, 23, 23, 23, 21};
-            final int[] slots = {0, 1, 2, 3, 4, 6, 8, 10, 11, 12, 13, 13, 13, 14};
-            for (int i = 0; i < slots.length; i++) constructor.visitVarInsn(opcodes[i], slots[i]);
-            constructor.visitFieldInsn(Opcodes.GETSTATIC, owner + "$RandomizationType", "DEFAULT", "L" + owner + "$RandomizationType;");
-            constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, owner, "<init>",
-                    "(Lnet/minecraft/core/particles/ParticleOptions;ZZDDDFFFFFFIL" + owner + "$RandomizationType;)V", false);
-            constructor.visitInsn(Opcodes.RETURN);
-            constructor.visitMaxs(24, 15);
-            constructor.visitEnd();
-        }
-        writer.visitEnd();
-        return writer.toByteArray();
+    @Test
+    void detectsReorderingEvenWhenNormalizedCodecTokensAreIdentical() throws Exception {
+        final String owner = "synthetic/wire/Coordinates";
+        final var fields = List.of("left:I", "right:I");
+        final var before = new ClassWriter(0);
+        WireFixtures.node(owner, fields, List.of("VAR_INT", "VAR_INT"), List.of(0, 1), true).accept(before);
+        final var after = new ClassWriter(0);
+        WireFixtures.node(owner, fields, List.of("VAR_INT", "VAR_INT"), List.of(1, 0), true).accept(after);
+        final var packet = new PacketUpdater.RetainedPacket("Coordinates", "Coordinates.SERIALIZER", owner, owner);
+        final var migrations = PacketMigrationScanner.scan(jar(Map.of(owner, before.toByteArray())),
+                jar(Map.of(owner, after.toByteArray())), List.of(packet));
+        assertEquals(List.of(1, 0), migrations.getFirst().wire().bindings().stream().map(WireMigration.Binding::source).toList());
     }
 
     @Test
@@ -703,7 +688,7 @@ class PacketMigrationScannerTest {
         return writer.toByteArray();
     }
 
-    private static byte[] binaryEnumClass(String owner, String firstName, int firstId,
+    static byte[] binaryEnumClass(String owner, String firstName, int firstId,
                                           String secondName, int secondId) {
         final var writer = new ClassWriter(0);
         writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_ENUM,
