@@ -15,6 +15,8 @@ public interface BiomeTags {
 
     TagKey<Biome> ALLOWS_TROPICAL_FISH_SPAWNS_AT_ANY_HEIGHT = TagKey.unsafeOf("allows_tropical_fish_spawns_at_any_height");
 
+    TagKey<Biome> GENERATED_IN_BELOW_ZERO_RETROGEN = TagKey.unsafeOf("generated_in_below_zero_retrogen");
+
     TagKey<Biome> HAS_STRUCTURE_ABANDONED_CAMP_BAMBOO_JUNGLE = TagKey.unsafeOf("has_structure/abandoned_camp_bamboo_jungle");
 
     TagKey<Biome> HAS_STRUCTURE_ABANDONED_CAMP_BIRCH_FOREST = TagKey.unsafeOf("has_structure/abandoned_camp_birch_forest");
@@ -122,6 +124,8 @@ public interface BiomeTags {
     TagKey<Biome> IS_BADLANDS = TagKey.unsafeOf("is_badlands");
 
     TagKey<Biome> IS_BEACH = TagKey.unsafeOf("is_beach");
+
+    TagKey<Biome> IS_CAVE = TagKey.unsafeOf("is_cave");
 
     TagKey<Biome> IS_DEEP_OCEAN = TagKey.unsafeOf("is_deep_ocean");
 

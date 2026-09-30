@@ -1,0 +1,691 @@
+{
+  "TransferPacket#TransferPacket.SERIALIZER" : {
+    "baseline" : {
+      "owner" : "net/minecraft/network/protocol/common/ClientboundTransferPacket",
+      "components" : [ {
+        "name" : "host",
+        "descriptor" : "Ljava/lang/String;",
+        "signature" : null
+      }, {
+        "name" : "port",
+        "descriptor" : "I",
+        "signature" : null
+      }, {
+        "name" : "properties",
+        "descriptor" : "Ljava/util/Map;",
+        "signature" : "Ljava/util/Map<Ljava/lang/String;Ljava/lang/String;>;"
+      } ],
+      "fields" : [ {
+        "component" : 0,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "STRING_UTF8",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 1,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 2,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "map",
+          "operations" : [ ],
+          "arguments" : [ {
+            "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+            "name" : "STRING_UTF8",
+            "operations" : [ ],
+            "arguments" : [ ]
+          }, {
+            "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+            "name" : "STRING_UTF8",
+            "operations" : [ ],
+            "arguments" : [ ]
+          } ]
+        }
+      } ]
+    },
+    "target" : {
+      "owner" : "net/minecraft/network/protocol/common/ClientboundTransferPacket",
+      "components" : [ {
+        "name" : "host",
+        "descriptor" : "Ljava/lang/String;",
+        "signature" : null
+      }, {
+        "name" : "port",
+        "descriptor" : "I",
+        "signature" : null
+      }, {
+        "name" : "properties",
+        "descriptor" : "Ljava/util/Map;",
+        "signature" : "Ljava/util/Map<Ljava/lang/String;Ljava/lang/String;>;"
+      } ],
+      "fields" : [ {
+        "component" : 0,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "STRING_UTF8",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 1,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 2,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "map",
+          "operations" : [ ],
+          "arguments" : [ {
+            "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+            "name" : "STRING_UTF8",
+            "operations" : [ ],
+            "arguments" : [ ]
+          }, {
+            "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+            "name" : "STRING_UTF8",
+            "operations" : [ ],
+            "arguments" : [ ]
+          } ]
+        }
+      } ]
+    },
+    "bindings" : [ {
+      "component" : 0,
+      "source" : 0,
+      "javaType" : "String",
+      "networkType" : "NetworkBuffer.STRING",
+      "constant" : null
+    }, {
+      "component" : 1,
+      "source" : 1,
+      "javaType" : "int",
+      "networkType" : "NetworkBuffer.VAR_INT",
+      "constant" : null
+    }, {
+      "component" : 2,
+      "source" : 2,
+      "javaType" : "java.util.Map<String, String>",
+      "networkType" : "NetworkBuffer.STRING.mapValue(NetworkBuffer.STRING)",
+      "constant" : null
+    } ]
+  },
+  "JoinGamePacket#JoinGamePacket.SERIALIZER@[9]" : {
+    "baseline" : {
+      "owner" : "net/minecraft/network/protocol/game/CommonPlayerSpawnInfo",
+      "components" : [ {
+        "name" : "dimensionType",
+        "descriptor" : "Lnet/minecraft/core/Holder;",
+        "signature" : "Lnet/minecraft/core/Holder<Lnet/minecraft/world/level/dimension/DimensionType;>;"
+      }, {
+        "name" : "dimension",
+        "descriptor" : "Lnet/minecraft/resources/ResourceKey;",
+        "signature" : "Lnet/minecraft/resources/ResourceKey<Lnet/minecraft/world/level/Level;>;"
+      }, {
+        "name" : "gameType",
+        "descriptor" : "Lnet/minecraft/world/level/GameType;",
+        "signature" : null
+      }, {
+        "name" : "previousGameType",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/world/level/GameType;>;"
+      }, {
+        "name" : "isDebug",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "isFlat",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "lastDeathLocation",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/core/GlobalPos;>;"
+      }, {
+        "name" : "portalCooldown",
+        "descriptor" : "I",
+        "signature" : null
+      }, {
+        "name" : "seaLevel",
+        "descriptor" : "I",
+        "signature" : null
+      } ],
+      "fields" : [ {
+        "component" : 0,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/dimension/DimensionType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 1,
+        "codec" : {
+          "owner" : "net/minecraft/resources/ResourceKey",
+          "name" : "streamCodec(Lnet/minecraft/resources/ResourceKey;)Lnet/minecraft/network/codec/StreamCodec;",
+          "operations" : [ "field:net/minecraft/core/registries/Registries#DIMENSION:Lnet/minecraft/resources/ResourceKey;" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 2,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 3,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "OPTIONAL_STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 4,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 5,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 6,
+        "codec" : {
+          "owner" : "net/minecraft/core/GlobalPos",
+          "name" : "STREAM_CODEC",
+          "operations" : [ "optional" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 7,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 8,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      } ]
+    },
+    "target" : {
+      "owner" : "net/minecraft/network/protocol/game/CommonPlayerSpawnInfo",
+      "components" : [ {
+        "name" : "dimensionType",
+        "descriptor" : "Lnet/minecraft/core/Holder;",
+        "signature" : "Lnet/minecraft/core/Holder<Lnet/minecraft/world/level/dimension/DimensionType;>;"
+      }, {
+        "name" : "dimension",
+        "descriptor" : "Lnet/minecraft/resources/ResourceKey;",
+        "signature" : "Lnet/minecraft/resources/ResourceKey<Lnet/minecraft/world/level/Level;>;"
+      }, {
+        "name" : "gameType",
+        "descriptor" : "Lnet/minecraft/world/level/GameType;",
+        "signature" : null
+      }, {
+        "name" : "previousGameType",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/world/level/GameType;>;"
+      }, {
+        "name" : "isDebug",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "isFlat",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "lastDeathLocation",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/core/GlobalPos;>;"
+      }, {
+        "name" : "portalCooldown",
+        "descriptor" : "I",
+        "signature" : null
+      }, {
+        "name" : "seaLevel",
+        "descriptor" : "I",
+        "signature" : null
+      } ],
+      "fields" : [ {
+        "component" : 0,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/dimension/DimensionType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 1,
+        "codec" : {
+          "owner" : "net/minecraft/resources/ResourceKey",
+          "name" : "streamCodec(Lnet/minecraft/resources/ResourceKey;)Lnet/minecraft/network/codec/StreamCodec;",
+          "operations" : [ "field:net/minecraft/core/registries/Registries#DIMENSION:Lnet/minecraft/resources/ResourceKey;" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 2,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 3,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "OPTIONAL_STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 4,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 5,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 6,
+        "codec" : {
+          "owner" : "net/minecraft/core/GlobalPos",
+          "name" : "STREAM_CODEC",
+          "operations" : [ "optional" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 7,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 8,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      } ]
+    },
+    "bindings" : [ {
+      "component" : 0,
+      "source" : 0,
+      "javaType" : "",
+      "networkType" : "VAR_INT",
+      "constant" : null
+    }, {
+      "component" : 1,
+      "source" : 1,
+      "javaType" : "",
+      "networkType" : "STRING",
+      "constant" : null
+    }, {
+      "component" : 2,
+      "source" : 2,
+      "javaType" : "",
+      "networkType" : "GameMode.NETWORK_TYPE",
+      "constant" : null
+    }, {
+      "component" : 3,
+      "source" : 3,
+      "javaType" : "",
+      "networkType" : "NetworkBuffer.OPTIONAL_VAR_INT.transform(\n        (Integer id) -> id == null ? null : switch (id) {\n            case 0 -> GameMode.SURVIVAL;\n            case 1 -> GameMode.CREATIVE;\n            case 2 -> GameMode.ADVENTURE;\n            case 3 -> GameMode.SPECTATOR;\n            default -> throw new IllegalArgumentException(\"Unknown GameMode id: \" + id);\n        },\n        (GameMode value) -> value == null ? null : switch (value) {\n            case SURVIVAL -> 0;\n            case CREATIVE -> 1;\n            case ADVENTURE -> 2;\n            case SPECTATOR -> 3;\n        }\n)",
+      "constant" : null
+    }, {
+      "component" : 4,
+      "source" : 4,
+      "javaType" : "boolean",
+      "networkType" : "NetworkBuffer.BOOLEAN",
+      "constant" : null
+    }, {
+      "component" : 5,
+      "source" : 5,
+      "javaType" : "boolean",
+      "networkType" : "NetworkBuffer.BOOLEAN",
+      "constant" : null
+    }, {
+      "component" : 6,
+      "source" : 6,
+      "javaType" : "",
+      "networkType" : "WorldPos.NETWORK_TYPE.optional()",
+      "constant" : null
+    }, {
+      "component" : 7,
+      "source" : 7,
+      "javaType" : "int",
+      "networkType" : "NetworkBuffer.VAR_INT",
+      "constant" : null
+    }, {
+      "component" : 8,
+      "source" : 8,
+      "javaType" : "int",
+      "networkType" : "NetworkBuffer.VAR_INT",
+      "constant" : null
+    } ]
+  },
+  "RespawnPacket#RespawnPacket.SERIALIZER@[0]" : {
+    "baseline" : {
+      "owner" : "net/minecraft/network/protocol/game/CommonPlayerSpawnInfo",
+      "components" : [ {
+        "name" : "dimensionType",
+        "descriptor" : "Lnet/minecraft/core/Holder;",
+        "signature" : "Lnet/minecraft/core/Holder<Lnet/minecraft/world/level/dimension/DimensionType;>;"
+      }, {
+        "name" : "dimension",
+        "descriptor" : "Lnet/minecraft/resources/ResourceKey;",
+        "signature" : "Lnet/minecraft/resources/ResourceKey<Lnet/minecraft/world/level/Level;>;"
+      }, {
+        "name" : "gameType",
+        "descriptor" : "Lnet/minecraft/world/level/GameType;",
+        "signature" : null
+      }, {
+        "name" : "previousGameType",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/world/level/GameType;>;"
+      }, {
+        "name" : "isDebug",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "isFlat",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "lastDeathLocation",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/core/GlobalPos;>;"
+      }, {
+        "name" : "portalCooldown",
+        "descriptor" : "I",
+        "signature" : null
+      }, {
+        "name" : "seaLevel",
+        "descriptor" : "I",
+        "signature" : null
+      } ],
+      "fields" : [ {
+        "component" : 0,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/dimension/DimensionType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 1,
+        "codec" : {
+          "owner" : "net/minecraft/resources/ResourceKey",
+          "name" : "streamCodec(Lnet/minecraft/resources/ResourceKey;)Lnet/minecraft/network/codec/StreamCodec;",
+          "operations" : [ "field:net/minecraft/core/registries/Registries#DIMENSION:Lnet/minecraft/resources/ResourceKey;" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 2,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 3,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "OPTIONAL_STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 4,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 5,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 6,
+        "codec" : {
+          "owner" : "net/minecraft/core/GlobalPos",
+          "name" : "STREAM_CODEC",
+          "operations" : [ "optional" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 7,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 8,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      } ]
+    },
+    "target" : {
+      "owner" : "net/minecraft/network/protocol/game/CommonPlayerSpawnInfo",
+      "components" : [ {
+        "name" : "dimensionType",
+        "descriptor" : "Lnet/minecraft/core/Holder;",
+        "signature" : "Lnet/minecraft/core/Holder<Lnet/minecraft/world/level/dimension/DimensionType;>;"
+      }, {
+        "name" : "dimension",
+        "descriptor" : "Lnet/minecraft/resources/ResourceKey;",
+        "signature" : "Lnet/minecraft/resources/ResourceKey<Lnet/minecraft/world/level/Level;>;"
+      }, {
+        "name" : "gameType",
+        "descriptor" : "Lnet/minecraft/world/level/GameType;",
+        "signature" : null
+      }, {
+        "name" : "previousGameType",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/world/level/GameType;>;"
+      }, {
+        "name" : "isDebug",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "isFlat",
+        "descriptor" : "Z",
+        "signature" : null
+      }, {
+        "name" : "lastDeathLocation",
+        "descriptor" : "Ljava/util/Optional;",
+        "signature" : "Ljava/util/Optional<Lnet/minecraft/core/GlobalPos;>;"
+      }, {
+        "name" : "portalCooldown",
+        "descriptor" : "I",
+        "signature" : null
+      }, {
+        "name" : "seaLevel",
+        "descriptor" : "I",
+        "signature" : null
+      } ],
+      "fields" : [ {
+        "component" : 0,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/dimension/DimensionType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 1,
+        "codec" : {
+          "owner" : "net/minecraft/resources/ResourceKey",
+          "name" : "streamCodec(Lnet/minecraft/resources/ResourceKey;)Lnet/minecraft/network/codec/StreamCodec;",
+          "operations" : [ "field:net/minecraft/core/registries/Registries#DIMENSION:Lnet/minecraft/resources/ResourceKey;" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 2,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 3,
+        "codec" : {
+          "owner" : "net/minecraft/world/level/GameType",
+          "name" : "OPTIONAL_STREAM_CODEC",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 4,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 5,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "BOOL",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 6,
+        "codec" : {
+          "owner" : "net/minecraft/core/GlobalPos",
+          "name" : "STREAM_CODEC",
+          "operations" : [ "optional" ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 7,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      }, {
+        "component" : 8,
+        "codec" : {
+          "owner" : "net/minecraft/network/codec/ByteBufCodecs",
+          "name" : "VAR_INT",
+          "operations" : [ ],
+          "arguments" : [ ]
+        }
+      } ]
+    },
+    "bindings" : [ {
+      "component" : 0,
+      "source" : 0,
+      "javaType" : "",
+      "networkType" : "VAR_INT",
+      "constant" : null
+    }, {
+      "component" : 1,
+      "source" : 1,
+      "javaType" : "",
+      "networkType" : "STRING",
+      "constant" : null
+    }, {
+      "component" : 2,
+      "source" : 2,
+      "javaType" : "",
+      "networkType" : "GameMode.NETWORK_TYPE",
+      "constant" : null
+    }, {
+      "component" : 3,
+      "source" : 3,
+      "javaType" : "",
+      "networkType" : "NetworkBuffer.OPTIONAL_VAR_INT.transform(\n        (Integer id) -> id == null ? null : switch (id) {\n            case 0 -> GameMode.SURVIVAL;\n            case 1 -> GameMode.CREATIVE;\n            case 2 -> GameMode.ADVENTURE;\n            case 3 -> GameMode.SPECTATOR;\n            default -> throw new IllegalArgumentException(\"Unknown GameMode id: \" + id);\n        },\n        (GameMode value) -> value == null ? null : switch (value) {\n            case SURVIVAL -> 0;\n            case CREATIVE -> 1;\n            case ADVENTURE -> 2;\n            case SPECTATOR -> 3;\n        }\n)",
+      "constant" : null
+    }, {
+      "component" : 4,
+      "source" : 4,
+      "javaType" : "boolean",
+      "networkType" : "NetworkBuffer.BOOLEAN",
+      "constant" : null
+    }, {
+      "component" : 5,
+      "source" : 5,
+      "javaType" : "boolean",
+      "networkType" : "NetworkBuffer.BOOLEAN",
+      "constant" : null
+    }, {
+      "component" : 6,
+      "source" : 6,
+      "javaType" : "",
+      "networkType" : "WorldPos.NETWORK_TYPE.optional()",
+      "constant" : null
+    }, {
+      "component" : 7,
+      "source" : 7,
+      "javaType" : "int",
+      "networkType" : "NetworkBuffer.VAR_INT",
+      "constant" : null
+    }, {
+      "component" : 8,
+      "source" : 8,
+      "javaType" : "int",
+      "networkType" : "NetworkBuffer.VAR_INT",
+      "constant" : null
+    } ]
+  }
+}

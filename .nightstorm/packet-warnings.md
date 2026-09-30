@@ -1,5 +1,3 @@
-Generated from Minestom and Minecraft metadata. See `.nightstorm/manifest.json` on the release branch.
-
 ## Packet compatibility warnings
 
 - net.minecraft.network.protocol.game.GamePacketTypes#SERVERBOUND_PUNCH: net.minecraft.network.protocol.game.ServerboundPunchPacket: Cannot prove field-to-codec bindings

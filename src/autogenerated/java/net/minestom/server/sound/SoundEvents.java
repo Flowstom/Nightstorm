@@ -3803,6 +3803,8 @@ sealed interface SoundEvents permits SoundEvent {
 
     SoundEvent ENTITY_ZOMBIE_NAUTILUS_HURT_LAND = BuiltinSoundEvent.get(SoundEventKeys.ENTITY_ZOMBIE_NAUTILUS_HURT_LAND);
 
+    SoundEvent ENTITY_ZOMBIE_NAUTILUS_RIDING = BuiltinSoundEvent.get(SoundEventKeys.ENTITY_ZOMBIE_NAUTILUS_RIDING);
+
     SoundEvent ENTITY_ZOMBIE_NAUTILUS_SWIM = BuiltinSoundEvent.get(SoundEventKeys.ENTITY_ZOMBIE_NAUTILUS_SWIM);
 
     SoundEvent ENTITY_ZOMBIFIED_PIGLIN_AMBIENT = BuiltinSoundEvent.get(SoundEventKeys.ENTITY_ZOMBIFIED_PIGLIN_AMBIENT);

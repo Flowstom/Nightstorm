@@ -3591,6 +3591,8 @@ public interface SoundEventKeys {
 
     RegistryKey<SoundEvent> ENTITY_ZOMBIE_NAUTILUS_HURT_LAND = RegistryKey.unsafeOf("entity.zombie_nautilus.hurt_land");
 
+    RegistryKey<SoundEvent> ENTITY_ZOMBIE_NAUTILUS_RIDING = RegistryKey.unsafeOf("entity.zombie_nautilus.riding");
+
     RegistryKey<SoundEvent> ENTITY_ZOMBIE_NAUTILUS_SWIM = RegistryKey.unsafeOf("entity.zombie_nautilus.swim");
 
     RegistryKey<SoundEvent> ENTITY_ZOMBIE_VILLAGER_AMBIENT = RegistryKey.unsafeOf("entity.zombie_villager.ambient");

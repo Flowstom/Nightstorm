@@ -1,0 +1,160 @@
+{
+  "net.minecraft.world.item.DyeColor#getId": {
+    "values": {
+      "WHITE": 0,
+      "ORANGE": 1,
+      "MAGENTA": 2,
+      "LIGHT_BLUE": 3,
+      "YELLOW": 4,
+      "LIME": 5,
+      "PINK": 6,
+      "GRAY": 7,
+      "LIGHT_GRAY": 8,
+      "CYAN": 9,
+      "PURPLE": 10,
+      "BLUE": 11,
+      "BROWN": 12,
+      "GREEN": 13,
+      "RED": 14,
+      "BLACK": 15
+    }
+  },
+  "net.minecraft.world.item.DyeColor#name": {
+    "values": {
+      "WHITE": "WHITE",
+      "ORANGE": "ORANGE",
+      "MAGENTA": "MAGENTA",
+      "LIGHT_BLUE": "LIGHT_BLUE",
+      "YELLOW": "YELLOW",
+      "LIME": "LIME",
+      "PINK": "PINK",
+      "GRAY": "GRAY",
+      "LIGHT_GRAY": "LIGHT_GRAY",
+      "CYAN": "CYAN",
+      "PURPLE": "PURPLE",
+      "BLUE": "BLUE",
+      "BROWN": "BROWN",
+      "GREEN": "GREEN",
+      "RED": "RED",
+      "BLACK": "BLACK"
+    }
+  },
+  "net.minecraft.world.item.DyeColor#getTextureDiffuseColor\u002616777215": {
+    "values": {
+      "WHITE": 16383998,
+      "ORANGE": 16351261,
+      "MAGENTA": 13061821,
+      "LIGHT_BLUE": 3847130,
+      "YELLOW": 16701501,
+      "LIME": 8439583,
+      "PINK": 15961002,
+      "GRAY": 4673362,
+      "LIGHT_GRAY": 10329495,
+      "CYAN": 1481884,
+      "PURPLE": 8991416,
+      "BLUE": 3949738,
+      "BROWN": 8606770,
+      "GREEN": 6192150,
+      "RED": 11546150,
+      "BLACK": 1908001
+    },
+    "owner": "net.minecraft.util.CommonColors",
+    "field": "TEXTURE_TINT_COLORS"
+  },
+  "net.minecraft.world.item.DyeColor#getTextColor": {
+    "values": {
+      "WHITE": -1,
+      "ORANGE": -38881,
+      "MAGENTA": -65281,
+      "LIGHT_BLUE": -6635315,
+      "YELLOW": -256,
+      "LIME": -4194560,
+      "PINK": -38476,
+      "GRAY": -8355712,
+      "LIGHT_GRAY": -2894893,
+      "CYAN": -16711681,
+      "PURPLE": -6283024,
+      "BLUE": -16776961,
+      "BROWN": -7650029,
+      "GREEN": -16711936,
+      "RED": -65536,
+      "BLACK": -16777216
+    },
+    "owner": "net.minecraft.client.renderer.blockentity.AbstractSignRenderer",
+    "field": "BRIGHT_TEXT_COLORS"
+  },
+  "net.minecraft.world.item.DyeColor#getFireworkColor": {
+    "values": {
+      "WHITE": 15790320,
+      "ORANGE": 15435844,
+      "MAGENTA": 12801229,
+      "LIGHT_BLUE": 6719955,
+      "YELLOW": 14602026,
+      "LIME": 4312372,
+      "PINK": 14188952,
+      "GRAY": 4408131,
+      "LIGHT_GRAY": 11250603,
+      "CYAN": 2651799,
+      "PURPLE": 8073150,
+      "BLUE": 2437522,
+      "BROWN": 5320730,
+      "GREEN": 3887386,
+      "RED": 11743532,
+      "BLACK": 1973019
+    },
+    "owner": "net.minecraft.world.item.component.FireworkExplosion",
+    "field": "DEFAULT_COLOR_TINTS"
+  },
+  "net.minecraft.world.item.DyeColor#getMapColor.id": {
+    "values": {
+      "WHITE": 8,
+      "ORANGE": 15,
+      "MAGENTA": 16,
+      "LIGHT_BLUE": 17,
+      "YELLOW": 18,
+      "LIME": 19,
+      "PINK": 20,
+      "GRAY": 21,
+      "LIGHT_GRAY": 22,
+      "CYAN": 23,
+      "PURPLE": 24,
+      "BLUE": 25,
+      "BROWN": 26,
+      "GREEN": 27,
+      "RED": 28,
+      "BLACK": 29
+    },
+    "owner": "net.minecraft.world.level.material.MapColor",
+    "field": "DYE_TO_DEFAULT_COLOR"
+  },
+  "net.minecraft.sounds.SoundSource#ordinal": {
+    "values": {
+      "MASTER": 0,
+      "MUSIC": 1,
+      "RECORDS": 2,
+      "WEATHER": 3,
+      "BLOCKS": 4,
+      "HOSTILE": 5,
+      "NEUTRAL": 6,
+      "PLAYERS": 7,
+      "AMBIENT": 8,
+      "VOICE": 9,
+      "UI": 10
+    }
+  },
+  "net.minecraft.sounds.SoundSource#getName": {
+    "values": {
+      "MASTER": "master",
+      "MUSIC": "music",
+      "RECORDS": "record",
+      "WEATHER": "weather",
+      "BLOCKS": "block",
+      "HOSTILE": "hostile",
+      "NEUTRAL": "neutral",
+      "PLAYERS": "player",
+      "AMBIENT": "ambient",
+      "VOICE": "voice",
+      "UI": "ui"
+    }
+  }
+}
