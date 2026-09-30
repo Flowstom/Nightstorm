@@ -214,7 +214,7 @@
     <dependency>
       <groupId>net.flowstom</groupId>
       <artifactId>nightstorm-data</artifactId>
-      <version>2026.09.12-26.3-rc-3</version>
+      <version>2026.09.12-26.4-snapshot-2</version>
       <scope>runtime</scope>
       <exclusions>
         <exclusion>

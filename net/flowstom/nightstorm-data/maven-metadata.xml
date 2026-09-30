@@ -3,8 +3,8 @@
   <groupId>net.flowstom</groupId>
   <artifactId>nightstorm-data</artifactId>
   <versioning>
-    <latest>2026.09.12-26.3-rc-3</latest>
-    <release>2026.09.12-26.3-rc-3</release>
+    <latest>2026.09.12-26.4-snapshot-2</latest>
+    <release>2026.09.12-26.4-snapshot-2</release>
     <versions>
       <version>2026.07.22-26.3-snapshot-5</version>
       <version>2026.07.22-26.3-snapshot-6</version>
@@ -18,7 +18,8 @@
       <version>2026.08.28-26.3-rc-2</version>
       <version>2026.09.12-26.3-rc-2</version>
       <version>2026.09.12-26.3-rc-3</version>
+      <version>2026.09.12-26.4-snapshot-2</version>
     </versions>
-    <lastUpdated>20260914215143</lastUpdated>
+    <lastUpdated>20260930231833</lastUpdated>
   </versioning>
 </metadata>
