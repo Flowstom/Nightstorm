@@ -57,8 +57,7 @@ final class RetainedPacketMigrator {
                 planMovedNestedFloats(sources, edits, packetType, migration);
                 continue;
             }
-            if (migration.kind() != PacketMigrationScanner.Kind.OPTIONAL_ENUM
-                    && migration.kind() != PacketMigrationScanner.Kind.BYTE_ARRAY_BIT_SET) {
+            if (migration.kind() != PacketMigrationScanner.Kind.CODEC_REWRITE) {
                 planSemanticMigration(sources, edits, wirePlans, packetType, migration);
                 continue;
             }
@@ -93,14 +92,24 @@ final class RetainedPacketMigrator {
                     }
                     final SerializerSlot slot = new SerializerSlot(field.source(), field.owner(), field.name(), componentPath);
                     final Expression replacement;
-                    if (migration.kind() == PacketMigrationScanner.Kind.OPTIONAL_ENUM) {
-                        final ResolvedType enumType = sources.recordComponentType(owner, component, true);
+                    final CodecChange change = migration.codec();
+                    if (change == null) throw new IllegalStateException("Missing proven codec expression");
+                    String expression = change.expression();
+                    if (!change.enumIds().isEmpty()) {
+                        final ResolvedType enumType = sources.recordComponentType(owner, component, change.nullable());
                         requireMatchingEnum(enumType, migration);
-                        replacement = sources.parseExpression(codecExpression(enumType, migration),
-                                "optional enum codec expression");
+                        expression = expression.replace("$TYPE$", enumType.declaration().getNameAsString());
                     } else {
-                        replacement = byteArrayBitSetCodec(sources, owner, componentCodec, component);
+                        var parameter = sources.recordComponent(owner, component);
+                        String sourceType = parameter.getType().asString();
+                        String simple = change.carrier().substring(change.carrier().lastIndexOf('.') + 1);
+                        if (!sourceType.equals(change.carrier()) && !(sourceType.equals(simple)
+                                && owner.source().unit().getImports().stream().anyMatch(value -> value.getNameAsString().equals(change.carrier())
+                                    || value.isAsterisk() && value.getNameAsString().equals(change.carrier().substring(0, change.carrier().lastIndexOf('.')))))) {
+                            throw new IllegalStateException("Source carrier does not match proven codec carrier " + change.carrier());
+                        }
                     }
+                    replacement = sources.parseExpression(expression, "proven component codec expression");
                     final PlannedEdit edit = new PlannedEdit(componentCodec, replacement, semanticKey(migration), List.of());
                     final PlannedEdit previous = edits.putIfAbsent(slot, edit);
                     if (previous != null && !previous.semantic().equals(semanticKey(migration))) {
@@ -184,8 +193,8 @@ final class RetainedPacketMigrator {
                 sources.resolvedWirePlans.put(slot, plan);
                 yield wireSerializer(sources, packetType, plan);
             }
-            case APPENDED_BOOLEAN -> appendedBooleanSerializer(sources, packetType, current, migration.defaultValue());
-            case OPTIONAL_ENUM, BYTE_ARRAY_BIT_SET, MOVED_NESTED_FLOATS ->
+            case WIRE_SUFFIX -> suffixSerializer(sources, packetType, current, migration.suffix());
+            case CODEC_REWRITE, MOVED_NESTED_FLOATS ->
                     throw new IllegalStateException("Unexpected leaf migration");
         };
         final List<Node> removals = migration.kind() == PacketMigrationScanner.Kind.REORDERED_BOOLEAN_ENUM
@@ -865,40 +874,48 @@ final class RetainedPacketMigrator {
         return imported ? name : codec;
     }
 
-    private static Expression appendedBooleanSerializer(SourceIndex sources, ResolvedType packetType,
-                                                         Expression current, boolean defaultValue) {
-        final RecordDeclaration record = requireRecord(packetType);
-        if (current.toString().contains("compatibilityDelegate")) {
-            final Expression corrected = current.clone();
-            final List<MethodCallExpr> writes = corrected.findAll(MethodCallExpr.class).stream()
-                    .filter(call -> call.getNameAsString().equals("write") && call.getArguments().size() == 2)
-                    .filter(call -> terminalName(call.getArgument(0)).equals("BOOLEAN"))
-                    .filter(call -> call.getArgument(1) instanceof BooleanLiteralExpr).toList();
-            if (writes.size() != 1) {
-                throw new IllegalStateException("Unable to validate appended boolean compatibility wrapper");
-            }
-            writes.getFirst().setArgument(1, new BooleanLiteralExpr(defaultValue));
-            return corrected;
+    private static Expression suffixSerializer(SourceIndex sources, ResolvedType packetType,
+                                               Expression current, List<WireMigration.Binding> fields) {
+        return suffixSerializer(sources, packetType, current, fields, true);
+    }
+
+    private static Expression suffixSerializer(SourceIndex sources, ResolvedType packetType,
+                                               Expression current, List<WireMigration.Binding> fields, boolean unwrap) {
+        final String type = requireRecord(packetType).getNameAsString();
+        // On repeated application rebuild from the original delegate rather than nesting adapters.
+        Expression delegate = current;
+        if (unwrap && current instanceof ObjectCreationExpr creation && creation.getAnonymousClassBody().isPresent()) {
+            var delegates = creation.getAnonymousClassBody().get().stream().filter(com.github.javaparser.ast.body.FieldDeclaration.class::isInstance)
+                    .map(com.github.javaparser.ast.body.FieldDeclaration.class::cast).flatMap(field -> field.getVariables().stream())
+                    .filter(field -> field.getNameAsString().equals("wireSuffixDelegate")).toList();
+            if (delegates.size() == 1) delegate = delegates.getFirst().getInitializer().orElseThrow();
         }
-        final String type = record.getNameAsString();
-        return sources.parseExpression("""
+        var writes = new StringBuilder();
+        var reads = new StringBuilder();
+        for (int i = 0; i < fields.size(); i++) {
+            var field = fields.get(i);
+            if (field.constant() == null) throw new IllegalStateException("Wire suffix lacks a proven default");
+            writes.append("buffer.write(").append(field.networkType()).append(", ").append(field.constant()).append(");\n");
+            reads.append(field.javaType()).append(" suffix").append(i).append(" = buffer.read(").append(field.networkType()).append(");\n")
+                    .append("if (").append(unequal(field.javaType(), "suffix" + i, field.constant()))
+                    .append(") throw new IllegalArgumentException(\"Added field cannot be represented by the retained API\");\n");
+        }
+        final Expression result = sources.parseExpression("""
                 new NetworkBuffer.Type<%s>() {
-                    private final NetworkBuffer.Type<%s> compatibilityDelegate = %s;
-
-                    @Override
-                    public void write(NetworkBuffer buffer, %s value) {
-                        compatibilityDelegate.write(buffer, value);
-                        buffer.write(NetworkBuffer.BOOLEAN, %s);
+                    private final NetworkBuffer.Type<%s> wireSuffixDelegate = %s;
+                    @Override public void write(NetworkBuffer buffer, %s value) {
+                        wireSuffixDelegate.write(buffer, value);
+                        %s
                     }
-
-                    @Override
-                    public %s read(NetworkBuffer buffer) {
-                        var value = compatibilityDelegate.read(buffer);
-                        buffer.read(NetworkBuffer.BOOLEAN);
+                    @Override public %s read(NetworkBuffer buffer) {
+                        var value = wireSuffixDelegate.read(buffer);
+                        %s
                         return value;
                     }
                 }
-                """.formatted(type, type, current, type, defaultValue, type), "appended boolean serializer");
+                """.formatted(type, type, delegate, type, writes, type, reads), "schema-derived wire suffix");
+        if (delegate != current && !result.equals(current)) return suffixSerializer(sources, packetType, current, fields, false);
+        return result;
     }
 
     private static RecordDeclaration requireRecord(ResolvedType type) {
@@ -911,7 +928,7 @@ final class RetainedPacketMigrator {
     private static String semanticKey(PacketMigrationScanner.Migration migration) {
         return migration.kind() + ":" + migration.ids() + ':' + migration.targetEnum()
                 + ':' + migration.fixedSize() + ':' + migration.discriminator() + ':' + migration.defaultValue()
-                + ':' + migration.falseId() + ':' + migration.trueId() + ':' + migration.wire();
+                + ':' + migration.falseId() + ':' + migration.trueId() + ':' + migration.wire() + ':' + migration.suffix() + ':' + migration.codec();
     }
 
     private static List<Node> obsoletePrivateHelpers(ResolvedType packetType, Expression serializer) {
@@ -957,46 +974,6 @@ final class RetainedPacketMigrator {
             throw new IllegalStateException("Target and source enum constants do not match for "
                     + enumType.qualifiedName() + ": " + migration.ids().keySet() + " versus " + sourceConstants);
         }
-    }
-
-    private static String codecExpression(ResolvedType enumType, PacketMigrationScanner.Migration migration) {
-        final String enumName = enumType.declaration().getNameAsString();
-        final StringBuilder source = new StringBuilder("NetworkBuffer.OPTIONAL_VAR_INT.transform(\n")
-                .append("        (Integer id) -> id == null ? null : switch (id) {\n");
-        migration.ids().entrySet().stream().sorted(Map.Entry.comparingByValue()).forEach(entry -> source
-                .append("            case ").append(entry.getValue()).append(" -> ").append(enumName).append('.')
-                .append(entry.getKey()).append(";\n"));
-        source.append("            default -> throw new IllegalArgumentException(\"Unknown ")
-                .append(enumName).append(" id: \" + id);\n")
-                .append("        },\n")
-                .append("        (").append(enumName).append(" value) -> value == null ? null : switch (value) {\n");
-        migration.ids().forEach((name, id) -> source.append("            case ").append(name).append(" -> ")
-                .append(id).append(";\n"));
-        return source.append("        }\n").append(")").toString();
-    }
-
-    private static Expression byteArrayBitSetCodec(SourceIndex sources, ResolvedType owner,
-                                                   Expression current, int component) {
-        final Parameter parameter = sources.recordComponent(owner, component);
-        final String bitSet = parameter.getType().asString();
-        if (!bitSet.equals("BitSet") && !bitSet.equals("java.util.BitSet")) {
-            throw new IllegalStateException("Migrated serializer leaf " + component + " in "
-                    + owner.qualifiedName() + " is not a BitSet");
-        }
-        final String existing = current.toString();
-        final String byteArray;
-        if (existing.equals("BITSET")) byteArray = "BYTE_ARRAY";
-        else if (existing.equals("NetworkBuffer.BITSET")) byteArray = "NetworkBuffer.BYTE_ARRAY";
-        else {
-            final String expected = existing.startsWith("NetworkBuffer.")
-                    ? "NetworkBuffer.BYTE_ARRAY.transform" : "BYTE_ARRAY.transform";
-            if (existing.startsWith(expected) && existing.contains(bitSet + "::valueOf")
-                    && existing.contains(bitSet + "::toByteArray")) return current.clone();
-            throw new IllegalStateException("BitSet serializer component " + component + " in "
-                    + owner.qualifiedName() + " does not use BITSET");
-        }
-        return sources.parseExpression(byteArray + ".transform(" + bitSet + "::valueOf, "
-                + bitSet + "::toByteArray)", "byte-array BitSet codec expression");
     }
 
     private static List<Integer> append(List<Integer> path, int component) {

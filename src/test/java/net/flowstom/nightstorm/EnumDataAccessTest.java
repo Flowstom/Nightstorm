@@ -52,19 +52,19 @@ class EnumDataAccessTest {
     void wrapsEnumGettersWithoutDependingOnTheirTypeOrVariableNames() throws Exception {
         final Path generator = root.resolve("DataGenerator/src/main/java/net/minestom/generators/Example.java");
         Files.createDirectories(generator.getParent());
-        Files.writeString(generator, """
+        final String source = """
+                class Example { void generate() {
                 for (SomeEnum entry : SomeEnum.values()) {
                     json.addProperty("name", entry.name());
                     json.addProperty("value", entry.getValue() & 0xFFFFFF);
                     json.addProperty("index", entry.getMap().id);
                     json.addProperty("other", unrelated.getValue());
                 }
-                """);
-        final var process = new ProcessBuilder("python3", "scripts/install-enum-data-access.py", root.toString())
-                .redirectErrorStream(true).start();
-        final String output = new String(process.getInputStream().readAllBytes());
-        assertEquals(0, process.waitFor(), output);
-        final String transformed = Files.readString(generator);
+                } }
+                """;
+        var unit = new com.github.javaparser.JavaParser().parse(source).getResult().orElseThrow();
+        IntegrationInstaller.wrapEnumAccess(unit);
+        final String transformed = unit.toString();
         assertTrue(transformed.contains("EnumDataAccess.read(entry, \"name\", null, null)"));
         assertTrue(transformed.contains("EnumDataAccess.read(entry, \"getValue\", null, 0xFFFFFF)"));
         assertTrue(transformed.contains("EnumDataAccess.read(entry, \"getMap\", \"id\", null)"));

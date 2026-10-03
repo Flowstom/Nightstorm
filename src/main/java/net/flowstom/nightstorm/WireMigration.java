@@ -129,7 +129,7 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
         return translated;
     }
 
-    private static boolean enumIdCodec(ClassNode owner) {
+    static boolean enumIdCodec(ClassNode owner) {
         if ((owner.access & Opcodes.ACC_ENUM) == 0) return false;
         var idFields = owner.fields.stream().filter(field -> field.desc.equals("I")
                 && (field.access & Opcodes.ACC_STATIC) == 0).toList();
@@ -142,8 +142,11 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
                         || !field.name.equals("STREAM_CODEC")) continue;
                 var callNode = previous(instruction);
                 if (!(callNode instanceof MethodInsnNode call)
-                        || !call.owner.equals(WireSchema.BYTE_CODECS) || !call.name.equals("idMapper")) return false;
+                        || !call.owner.equals(WireSchema.BYTE_CODECS)
+                        || !Set.of("idMapper", "enumCodec").contains(call.name)) return false;
                 if (!(previous(callNode) instanceof InvokeDynamicInsnNode mapper)) return false;
+                if (call.name.equals("enumCodec") && (!(previous(mapper) instanceof org.objectweb.asm.tree.LdcInsnNode literal)
+                        || !(literal.cst instanceof Type type) || !type.getInternalName().equals(owner.name))) return false;
                 for (Object argument : mapper.bsmArgs) {
                     if (!(argument instanceof Handle handle) || !handle.getOwner().equals(owner.name)) continue;
                     var implementation = owner.methods.stream().filter(m -> m.name.equals(handle.getName()) && m.desc.equals(handle.getDesc()))
@@ -172,7 +175,8 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
                 .map(c -> Type.getType(c.descriptor())).toArray(Type[]::new));
     }
 
-    private static String literal(Object value, String descriptor) {
+    static String literal(Object value, String descriptor) {
+        if (descriptor.equals("Ljava/lang/String;") && value instanceof String text) return new com.github.javaparser.ast.expr.StringLiteralExpr(text).toString();
         if (!(value instanceof Number number)) return null;
         return switch (descriptor) {
             case "Z" -> number.intValue() == 0 ? "false" : number.intValue() == 1 ? "true" : null;

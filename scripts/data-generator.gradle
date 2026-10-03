@@ -1,0 +1,32 @@
+// Run before Loom's afterEvaluate hook; upstream can still configure its own jar mode.
+gradle.beforeProject { project ->
+    project.afterEvaluate {
+        def loom = project.extensions.findByName('loom')
+        if (loom != null) {
+            def configuration = loom.minecraftJarConfiguration
+            // Reading the property finalizes it in Loom. Select through the plugin's loader first.
+            def modes = loom.class.classLoader.loadClass('net.fabricmc.loom.configuration.providers.minecraft.MinecraftJarConfiguration')
+            configuration.set(modes.getField('MERGED').get(null))
+        }
+    }
+    project.pluginManager.withPlugin('java') {
+        project.dependencies.add('implementation', 'org.ow2.asm:asm-tree:9.9')
+        project.tasks.withType(JavaExec).configureEach {
+            def jarOutput = System.getenv('NIGHTSTORM_VANILLA_JAR_OUTPUT')
+            if (jarOutput != null) {
+                doFirst {
+                    def candidates = classpath.files.findAll { file ->
+                        if (!file.isFile() || !file.name.endsWith('.jar')) return false
+                        new java.util.zip.ZipFile(file).withCloseable { zip ->
+                            zip.getEntry('net/minecraft/SharedConstants.class') != null
+                        }
+                    }
+                    if (candidates.size() != 1) {
+                        throw new GradleException('Expected one resolved vanilla jar, found: ' + candidates)
+                    }
+                    new File(jarOutput).text = candidates.first().absolutePath + '\n'
+                }
+            }
+        }
+    }
+}

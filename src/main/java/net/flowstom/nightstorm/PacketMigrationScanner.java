@@ -27,7 +27,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -86,7 +85,10 @@ final class PacketMigrationScanner {
             final Optional<List<String>> beforeShape = streamShape(baseline, baselineOwner, new HashSet<>());
             final Optional<List<String>> afterShape = streamShape(target, targetOwner, new HashSet<>());
             final var wireProjection = WireMigration.plan(before, after, target::readIfPresent);
-            if (wireEquivalent(beforeShape, afterShape) && wireProjection.isEmpty()) return;
+            boolean changedBoolean = beforeComponents.size() == afterComponents.size()
+                    && java.util.stream.IntStream.range(0, beforeComponents.size()).anyMatch(i ->
+                    beforeComponents.get(i).descriptor.equals("Z") && !afterComponents.get(i).descriptor.equals("Z"));
+            if (!changedBoolean && wireEquivalent(beforeShape, afterShape) && wireProjection.isEmpty()) return;
             final boolean[] migrated = {false};
             final java.util.function.Consumer<Migration> accept = migration -> {
                 migrated[0] = true;
@@ -116,8 +118,12 @@ final class PacketMigrationScanner {
                     final ClassNode afterClass = target.readIfPresent(afterType);
                     if (afterClass != null && isBinaryEnum(afterClass)
                             && componentReferencesCodec(after, afterComponent, afterType, "STREAM_CODEC")) {
-                        final BinaryBooleanIds ids = binaryBooleanIds(afterClass, beforeComponent);
+                        final var ids = booleanIds(baseline, target, before, beforeComponent, after, afterComponent, afterClass);
                         if (ids != null && ids.falseId() == 0 && ids.trueId() == 1) continue;
+                        if (ids != null) {
+                            accept.accept(Migration.codec(componentPath, CodecChange.bool(ids.falseId(), ids.trueId()), ""));
+                            continue;
+                        }
                     }
                 }
                 if (beforeClass != null && beforeComponent.signature == null
@@ -138,14 +144,20 @@ final class PacketMigrationScanner {
                     final ClassNode targetEnumClass = target.read(targetEnum);
                     final String codecField = requireOptionalVarIntCodec(targetEnumClass);
                     requireComponentCodecReference(after, afterComponent, targetEnum, codecField, componentPath);
-                    accept.accept(Migration.optionalEnum(componentPath, enumIds(targetEnumClass), targetEnum));
+                    accept.accept(Migration.codec(componentPath, CodecChange.enumeration("NetworkBuffer.OPTIONAL_VAR_INT", enumIds(targetEnumClass), true), targetEnum));
                     continue;
                 }
-                if (sameComponent(beforeComponent, afterComponent)
-                        && byteArrayBitSetMigration(baseline, target, before, after,
-                        beforeComponent, afterComponent)) {
-                    accept.accept(Migration.byteArrayBitSet(componentPath));
-                    continue;
+                if (sameComponent(beforeComponent, afterComponent)) {
+                    var oldAdapter = CodecFunctions.component(before, beforeComponent, baseline::readIfPresent);
+                    var newAdapter = CodecFunctions.component(after, afterComponent, target::readIfPresent);
+                    boolean transition = CodecFunctions.requiresAdapter(before, after, afterComponent);
+                    if (transition && (oldAdapter.isEmpty() || newAdapter.isEmpty())) {
+                        throw new IllegalStateException("Cannot prove portable codec functions for " + beforeComponent.name);
+                    }
+                    if (oldAdapter.isPresent() && newAdapter.isPresent() && (transition || !oldAdapter.equals(newAdapter))) {
+                        accept.accept(Migration.codec(componentPath, CodecChange.functions(newAdapter.get()), ""));
+                        continue;
+                    }
                 }
                 if (!beforeComponent.descriptor.equals(afterComponent.descriptor)
                         || !Objects.equals(beforeComponent.signature, afterComponent.signature)) {
@@ -189,7 +201,7 @@ final class PacketMigrationScanner {
         final Optional<Migration> positioned = movedNestedFloatPair(baseline, target, before, after,
                 beforeComponents, afterComponents, path);
         if (positioned.isPresent()) return positioned;
-        final Optional<Migration> reordered = reorderedBooleanEnum(target, before, after, beforeComponents,
+        final Optional<Migration> reordered = reorderedBooleanEnum(baseline, target, before, after, beforeComponents,
                 afterComponents, path);
         if (reordered.isPresent()) return reordered;
         final Optional<Migration> positionPath = linearPositionPath(baseline, target, before, after,
@@ -309,7 +321,7 @@ final class PacketMigrationScanner {
         return result;
     }
 
-    private static Optional<Migration> reorderedBooleanEnum(Classes target, ClassNode before, ClassNode after,
+    private static Optional<Migration> reorderedBooleanEnum(Classes baseline, Classes target, ClassNode before, ClassNode after,
                                                              List<RecordComponentNode> beforeComponents,
                                                              List<RecordComponentNode> afterComponents,
                                                              List<Integer> path) {
@@ -328,7 +340,7 @@ final class PacketMigrationScanner {
         }
         final int fixedSize = fixedStringListSize(after);
         if (fixedSize < 0 || !legacyBooleanStringPayload(before, fixedSize)) return Optional.empty();
-        final BinaryBooleanIds ids = binaryBooleanIds(enumClass, beforeComponents.get(2));
+        final var ids = booleanIds(baseline, target, before, beforeComponents.get(2), after, afterComponents.get(2), enumClass);
         if (ids == null) return Optional.empty();
         return Optional.of(Migration.reorderedBooleanEnum(path, fixedSize, ids.falseId(), ids.trueId()));
     }
@@ -366,20 +378,88 @@ final class PacketMigrationScanner {
                                                           List<RecordComponentNode> beforeComponents,
                                                           List<RecordComponentNode> afterComponents,
                                                           List<Integer> path) {
-        if (afterComponents.size() != beforeComponents.size() + 1
-                || !afterComponents.getLast().descriptor.equals("Z")) return Optional.empty();
+        final int added = afterComponents.size() - beforeComponents.size();
+        if (added <= 0) return Optional.empty();
         for (int index = 0; index < beforeComponents.size(); index++) {
-            if (!sameComponent(beforeComponents.get(index), afterComponents.get(index))) return Optional.empty();
+            if (!sameComponent(beforeComponents.get(index), afterComponents.get(index))
+                    || !beforeComponents.get(index).name.equals(afterComponents.get(index).name)) return Optional.empty();
         }
-        final Optional<List<String>> beforeShape = streamShape(baseline, before.name, new HashSet<>());
-        final Optional<List<String>> afterShape = streamShape(target, after.name, new HashSet<>());
+        final var beforeShape = streamShape(baseline, before.name, new HashSet<>());
+        final var afterShape = streamShape(target, after.name, new HashSet<>());
         if (beforeShape.isEmpty() || afterShape.isEmpty()
-                || afterShape.get().size() != beforeShape.get().size() + 1
-                || !afterShape.get().subList(0, beforeShape.get().size()).equals(beforeShape.get())
-                || !afterShape.get().getLast().equals("BOOLEAN")) return Optional.empty();
-        final boolean defaultValue = constructorBooleanDefault(baseline, target, before, after,
-                beforeComponents, afterComponents);
-        return Optional.of(Migration.appendedBoolean(path, defaultValue));
+                || afterShape.get().size() != beforeShape.get().size() + added
+                || !afterShape.get().subList(0, beforeShape.get().size()).equals(beforeShape.get())) return Optional.empty();
+        final var codecs = new ArrayList<PacketCodecScanner.CodecType>();
+        for (int i = 0; i < added; i++) {
+            String token = afterShape.get().get(beforeShape.get().size() + i);
+            String name = token.equals("BOOLEAN") ? "BOOL" : token.equals("STRING") ? "STRING_UTF8" : token;
+            var codec = PacketCodecScanner.translate(new WireSchema.Codec(CODEC_OWNER, name));
+            if (!codec.supported() || !codec.vanillaDescriptor().equals(afterComponents.get(beforeComponents.size() + i).descriptor)) return Optional.empty();
+            codecs.add(codec);
+        }
+        var defaults = suffixDefaults(baseline, target, before, after, beforeComponents, afterComponents);
+        var bindings = new ArrayList<WireMigration.Binding>();
+        for (int i = 0; i < added; i++) {
+            var codec = codecs.get(i);
+            bindings.add(new WireMigration.Binding(beforeComponents.size() + i, -1, codec.javaType(), codec.networkType(), defaults.get(i)));
+        }
+        return Optional.of(Migration.suffix(path, bindings));
+    }
+
+    private static List<String> suffixDefaults(Classes baseline, Classes target, ClassNode before, ClassNode after,
+                                             List<RecordComponentNode> oldFields, List<RecordComponentNode> newFields) {
+        String oldDescriptor = Type.getMethodDescriptor(Type.VOID_TYPE, oldFields.stream().map(c -> Type.getType(c.descriptor)).toArray(Type[]::new));
+        String newDescriptor = Type.getMethodDescriptor(Type.VOID_TYPE, newFields.stream().map(c -> Type.getType(c.descriptor)).toArray(Type[]::new));
+        int added = newFields.size() - oldFields.size();
+        var compatibility = after.methods.stream().filter(m -> m.name.equals("<init>") && m.desc.equals(oldDescriptor)).findFirst();
+        if (compatibility.isPresent()) {
+            var assignments = ConstructorMapping.assignments(after, compatibility.get()).orElseThrow(() -> new IllegalStateException("Unproven compatibility constructor"));
+            for (int i = 0; i < oldFields.size(); i++) {
+                var field = oldFields.get(i);
+                if (!new ConstructorMapping.Parameter(i, field.descriptor).equals(assignments.get(field.name))) {
+                    throw new IllegalStateException("Suffix compatibility constructor changes a retained field");
+                }
+            }
+            var result = new ArrayList<String>();
+            for (int i = oldFields.size(); i < newFields.size(); i++) {
+                var field = newFields.get(i);
+                var value = assignments.get(field.name);
+                String literal = value instanceof ConstructorMapping.Constant constant ? WireMigration.literal(constant.value(), field.descriptor) : null;
+                if (literal == null) throw new IllegalStateException("No proven suffix default for " + field.name);
+                result.add(literal);
+            }
+            return result;
+        }
+        if (added == 1 && newFields.getLast().descriptor.equals("Z")) {
+            var proven = BehaviorDefaultProof.booleanValue(after, newFields.getLast(), baseline::readIfPresent, target.all());
+            if (proven.isPresent()) return List.of(proven.get().toString());
+        }
+        List<String> result = null;
+        for (ClassNode candidate : target.all()) {
+            var oldOwner = baseline.readIfPresent(candidate.name);
+            if (oldOwner == null) continue;
+            for (var method : candidate.methods) {
+                var oldMethod = oldOwner.methods.stream().filter(m -> m.name.equals(method.name) && m.desc.equals(method.desc)).findFirst();
+                if (oldMethod.isEmpty() || !callsConstructor(oldMethod.get(), before.name, oldDescriptor)) continue;
+                var frames = BytecodeArguments.frames(candidate, method);
+                for (var instruction : method.instructions) {
+                    if (!(instruction instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL
+                            || !call.owner.equals(after.name) || !call.name.equals("<init>") || !call.desc.equals(newDescriptor)) continue;
+                    var literals = new ArrayList<String>();
+                    if (frames == null) throw new IllegalStateException("Cannot analyze suffix constructor arguments in " + candidate.name + '.' + method.name);
+                    for (int i = 0; i < added; i++) {
+                        Object value = BytecodeArguments.constant(frames[method.instructions.indexOf(call)], call, oldFields.size() + i);
+                        String literal = WireMigration.literal(value, newFields.get(oldFields.size() + i).descriptor);
+                        if (literal == null) throw new IllegalStateException("Unproven suffix constructor argument in " + candidate.name + '.' + method.name);
+                        literals.add(literal);
+                    }
+                    if (result != null && !result.equals(literals)) throw new IllegalStateException("Conflicting suffix constructor defaults");
+                    result = literals;
+                }
+            }
+        }
+        if (result == null) throw new IllegalStateException("No proven constructor defaults for added wire fields");
+        return result;
     }
 
     private static boolean sameComponent(RecordComponentNode left, RecordComponentNode right) {
@@ -500,103 +580,6 @@ final class PacketMigrationScanner {
         return false;
     }
 
-    private static boolean constructorBooleanDefault(Classes baseline, Classes target, ClassNode before,
-                                                     ClassNode after, List<RecordComponentNode> beforeComponents,
-                                                     List<RecordComponentNode> afterComponents) {
-        final Type[] arguments = afterComponents.stream().map(component -> Type.getType(component.descriptor))
-                .toArray(Type[]::new);
-        final String descriptor = Type.getMethodDescriptor(Type.VOID_TYPE, arguments);
-        final Type[] oldArguments = beforeComponents.stream().map(component -> Type.getType(component.descriptor))
-                .toArray(Type[]::new);
-        final String oldDescriptor = Type.getMethodDescriptor(Type.VOID_TYPE, oldArguments);
-        final Boolean behavioralDefault = baselineBehaviorDefault(baseline, target, after,
-                afterComponents.getLast());
-        if (behavioralDefault != null) return behavioralDefault;
-        Boolean value = null;
-        int calls = 0;
-        for (ClassNode candidate : target.all()) {
-            final ClassNode baselineCandidate = baseline.readIfPresent(candidate.name);
-            if (baselineCandidate == null) continue;
-            for (MethodNode method : candidate.methods) {
-                final MethodNode baselineMethod = baselineCandidate.methods.stream()
-                        .filter(candidateMethod -> candidateMethod.name.equals(method.name)
-                                && candidateMethod.desc.equals(method.desc))
-                        .findFirst().orElse(null);
-                if (baselineMethod == null || !callsConstructor(baselineMethod, before.name, oldDescriptor)) continue;
-                for (AbstractInsnNode instruction : method.instructions) {
-                    if (!(instruction instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL
-                            || !call.owner.equals(after.name) || !call.name.equals("<init>")
-                            || !call.desc.equals(descriptor)) continue;
-                    calls++;
-                    Integer constant = nullableConditionDefault(instruction);
-                    if (constant == null) constant = directIntegerArgument(instruction);
-                    if (constant == null || constant < 0 || constant > 1) {
-                        throw new IllegalStateException("Unable to prove appended boolean constructor argument in "
-                                + candidate.name + '.' + method.name);
-                    }
-                    final boolean booleanValue = constant == 1;
-                    if (value != null && value != booleanValue) {
-                        throw new IllegalStateException("Appended boolean constructor argument has conflicting constants");
-                    }
-                    value = booleanValue;
-                }
-            }
-        }
-        if (calls == 0 || value == null) {
-            throw new IllegalStateException("Unable to prove a compatibility default for appended boolean");
-        }
-        return value;
-    }
-
-    private static Boolean baselineBehaviorDefault(Classes baseline, Classes target, ClassNode packet,
-                                                   RecordComponentNode appended) {
-        Boolean result = null;
-        for (ClassNode owner : target.all()) {
-            final ClassNode oldOwner = baseline.readIfPresent(owner.name);
-            if (oldOwner == null) continue;
-            for (MethodNode method : owner.methods) {
-                final boolean baselineMethodExists = oldOwner.methods.stream().anyMatch(candidate ->
-                        candidate.name.equals(method.name) && candidate.desc.equals(method.desc));
-                if (!baselineMethodExists) continue;
-                for (AbstractInsnNode instruction : method.instructions) {
-                    if (!(instruction instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKEVIRTUAL
-                            || !call.owner.equals(packet.name) || !call.name.equals(appended.name)
-                            || !call.desc.equals("()Z")) continue;
-                    final AbstractInsnNode branch = nextReal(instruction);
-                    if (!(branch instanceof JumpInsnNode jump)
-                            || jump.getOpcode() != Opcodes.IFEQ && jump.getOpcode() != Opcodes.IFNE) continue;
-                    final boolean value = jump.getOpcode() == Opcodes.IFEQ;
-                    if (result != null && result != value) {
-                        throw new IllegalStateException("Appended boolean guards behavior with conflicting polarity");
-                    }
-                    result = value;
-                }
-            }
-        }
-        return result;
-    }
-
-    private static Integer directIntegerArgument(AbstractInsnNode call) {
-        final AbstractInsnNode value = previousReal(call);
-        for (AbstractInsnNode instruction = value == null ? null : value.getNext(); instruction != null
-                && instruction != call; instruction = instruction.getNext()) {
-            if (instruction instanceof LabelNode) return null;
-        }
-        return integerConstant(value);
-    }
-
-    private static Integer nullableConditionDefault(AbstractInsnNode call) {
-        int inspected = 0;
-        for (AbstractInsnNode instruction = call.getPrevious(); instruction != null && inspected < 24;
-             instruction = instruction.getPrevious()) {
-            if (instruction.getOpcode() >= 0) inspected++;
-            if (!(instruction instanceof JumpInsnNode jump) || jump.getOpcode() != Opcodes.IFNULL) continue;
-            final Integer value = integerConstant(nextReal(jump.label));
-            if (value != null && (value == 0 || value == 1)) return value;
-        }
-        return null;
-    }
-
     private static boolean callsConstructor(MethodNode method, String owner, String descriptor) {
         for (AbstractInsnNode instruction : method.instructions) {
             if (instruction instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
@@ -704,23 +687,6 @@ final class PacketMigrationScanner {
             if (!result.shape().equals(manual.shape())) return new ComponentCodecShape(true, Optional.empty());
         }
         return result;
-    }
-
-    private static boolean byteArrayBitSetMigration(Classes baseline, Classes target, ClassNode beforeOwner,
-                                                    ClassNode afterOwner, RecordComponentNode beforeComponent,
-                                                    RecordComponentNode afterComponent) {
-        if (!beforeComponent.descriptor.equals("Ljava/util/BitSet;")) return false;
-        final ComponentCodecShape before = componentCodecShape(baseline, beforeOwner, beforeComponent);
-        final ComponentCodecShape after = componentCodecShape(target, afterOwner, afterComponent);
-        final boolean candidate = manualBitSetReference(beforeOwner, beforeComponent)
-                && componentReferencesCodec(afterOwner, afterComponent, CODEC_OWNER, "BIT_SET");
-        final boolean proven = before.shape().filter(List.of("BIT_SET(LONG_ARRAY)")::equals).isPresent()
-                && after.shape().filter(List.of("BIT_SET(BYTE_ARRAY)")::equals).isPresent();
-        if (candidate && !proven) {
-            throw new IllegalStateException("Unable to prove BitSet storage migration for component "
-                    + beforeComponent.name);
-        }
-        return proven;
     }
 
     private static ComponentCodecShape manualComponentShape(Classes classes, ClassNode owner,
@@ -986,43 +952,19 @@ final class PacketMigrationScanner {
     private static boolean isBinaryEnum(ClassNode node) {
         if (!isEnum(node)) return false;
         try {
-            return new HashSet<>(enumIds(node).values()).equals(Set.of(0, 1));
+            var ids = enumIds(node);
+            return ids.size() == 2 && new HashSet<>(ids.values()).size() == 2;
         } catch (IllegalStateException ignored) {
             return false;
         }
     }
 
-    private static BinaryBooleanIds binaryBooleanIds(ClassNode enumClass, RecordComponentNode booleanComponent) {
-        final Map<String, Integer> ids = enumIds(enumClass);
-        if (ids.size() != 2 || !new HashSet<>(ids.values()).equals(Set.of(0, 1))) return null;
-        final Integer explicitFalse = ids.get("FALSE");
-        final Integer explicitTrue = ids.get("TRUE");
-        if (explicitFalse != null && explicitTrue != null) return new BinaryBooleanIds(explicitFalse, explicitTrue);
-
-        final Set<String> componentMeaning = identifierWords(booleanComponent.name);
-        componentMeaning.removeAll(Set.of("is", "has", "text", "value", "mode", "state", "type", "side"));
-        if (componentMeaning.isEmpty()) return null;
-        String trueConstant = null;
-        for (String constant : ids.keySet()) {
-            final Set<String> meaning = identifierWords(constant);
-            meaning.removeAll(Set.of("text", "value", "mode", "state", "type", "side"));
-            if (meaning.stream().noneMatch(componentMeaning::contains)) continue;
-            if (trueConstant != null) return null;
-            trueConstant = constant;
-        }
-        if (trueConstant == null) return null;
-        final String matched = trueConstant;
-        final String falseConstant = ids.keySet().stream().filter(name -> !name.equals(matched)).findFirst().orElse(null);
-        return falseConstant == null ? null : new BinaryBooleanIds(ids.get(falseConstant), ids.get(trueConstant));
-    }
-
-    private static Set<String> identifierWords(String identifier) {
-        final String separated = identifier.replaceAll("([a-z0-9])([A-Z])", "$1_$2");
-        final Set<String> result = new HashSet<>();
-        for (String word : separated.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
-            if (!word.isEmpty()) result.add(word);
-        }
-        return result;
+    private static BooleanEnumProof.Ids booleanIds(Classes baseline, Classes target, ClassNode before,
+                                                  RecordComponentNode oldField, ClassNode after,
+                                                  RecordComponentNode newField, ClassNode enumeration) {
+        if (!WireMigration.enumIdCodec(enumeration)) return null;
+        return BooleanEnumProof.infer(before, oldField, after, newField, enumeration,
+                baseline::readIfPresent, target::readIfPresent, target.all()).orElse(null);
     }
 
     private static Optional<List<String>> manualBufferShape(Classes classes, ClassNode node) {
@@ -1522,27 +1464,27 @@ final class PacketMigrationScanner {
     }
 
     enum Kind {
-        OPTIONAL_ENUM,
-        BYTE_ARRAY_BIT_SET,
+        CODEC_REWRITE,
         REORDERED_BOOLEAN_ENUM,
         LINEAR_POSITION_PATH,
-        APPENDED_BOOLEAN,
+        WIRE_SUFFIX,
         MOVED_NESTED_FLOATS,
         WIRE_PROJECTION
     }
 
     record Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
                      Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
-                     boolean defaultValue, int falseId, int trueId, WireMigration wire) {
+                     boolean defaultValue, int falseId, int trueId, WireMigration wire, List<WireMigration.Binding> suffix, CodecChange codec) {
         Migration {
             path = List.copyOf(path);
             ids = Map.copyOf(ids);
+            suffix = suffix == null ? List.of() : List.copyOf(suffix);
         }
 
         Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
                   Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
                   boolean defaultValue, int falseId, int trueId) {
-            this(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue, falseId, trueId, null);
+            this(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue, falseId, trueId, null, List.of(), null);
         }
 
         Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
@@ -1556,15 +1498,11 @@ final class PacketMigrationScanner {
         }
 
         static Migration wire(WireMigration plan, List<Integer> path) {
-            return new Migration(null, Kind.WIRE_PROJECTION, path, Map.of(), "", -1, -1, false, -1, -1, plan);
+            return new Migration(null, Kind.WIRE_PROJECTION, path, Map.of(), "", -1, -1, false, -1, -1, plan, List.of(), null);
         }
 
-        static Migration optionalEnum(List<Integer> path, Map<String, Integer> ids, String targetEnum) {
-            return new Migration(null, Kind.OPTIONAL_ENUM, path, ids, targetEnum, -1, -1, false, -1, -1);
-        }
-
-        static Migration byteArrayBitSet(List<Integer> path) {
-            return new Migration(null, Kind.BYTE_ARRAY_BIT_SET, path, Map.of(), "", -1, -1, false, -1, -1);
+        static Migration codec(List<Integer> path, CodecChange codec, String owner) {
+            return new Migration(null, Kind.CODEC_REWRITE, path, codec.enumIds(), owner, -1, -1, false, -1, -1, null, List.of(), codec);
         }
 
         static Migration reorderedBooleanEnum(List<Integer> path, int fixedSize, int falseId, int trueId) {
@@ -1577,8 +1515,8 @@ final class PacketMigrationScanner {
                     -1, -1);
         }
 
-        static Migration appendedBoolean(List<Integer> path, boolean defaultValue) {
-            return new Migration(null, Kind.APPENDED_BOOLEAN, path, Map.of(), "", -1, -1, defaultValue, -1, -1);
+        static Migration suffix(List<Integer> path, List<WireMigration.Binding> fields) {
+            return new Migration(null, Kind.WIRE_SUFFIX, path, Map.of(), "", -1, -1, false, -1, -1, null, fields, null);
         }
 
         static Migration movedNestedFloats(List<Integer> path) {
@@ -1587,7 +1525,7 @@ final class PacketMigrationScanner {
 
         Migration withPacket(PacketUpdater.RetainedPacket packet) {
             return new Migration(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue,
-                    falseId, trueId, wire);
+                    falseId, trueId, wire, suffix, codec);
         }
     }
 
@@ -1595,9 +1533,6 @@ final class PacketMigrationScanner {
     }
 
     private record ClassPair(String baseline, String target) {
-    }
-
-    private record BinaryBooleanIds(int falseId, int trueId) {
     }
 
     private record ComponentCodecShape(boolean referenced, Optional<List<String>> shape) {

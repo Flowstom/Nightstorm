@@ -357,17 +357,31 @@ class RetainedPacketMigratorTest {
                             VAR_INT, PulseNotice::amount, PulseNotice::new);
                 }
                 """);
-        final PacketMigrationScanner.Migration migration = semanticMigration("PulseNotice",
-                PacketMigrationScanner.Kind.APPENDED_BOOLEAN, -1, -1, true);
+        final PacketMigrationScanner.Migration migration = PacketMigrationScanner.Migration.suffix(List.of(), List.of(
+                new WireMigration.Binding(1, -1, "boolean", "NetworkBuffer.BOOLEAN", "true")))
+                .withPacket(new PacketUpdater.RetainedPacket("PulseNotice", "PulseNotice.SERIALIZER", "before", "after"));
 
         RetainedPacketMigrator.apply(root, List.of(migration));
         final String migrated = Files.readString(source);
         RetainedPacketMigrator.apply(root, List.of(migration));
 
         assertEquals(migrated, Files.readString(source));
-        assertEquals(1, occurrences(migrated, "compatibilityDelegate ="));
+        assertEquals(1, occurrences(migrated, "wireSuffixDelegate ="));
         assertTrue(migrated.contains("buffer.write(NetworkBuffer.BOOLEAN, true)"));
         assertTrue(migrated.contains("buffer.read(NetworkBuffer.BOOLEAN)"));
+
+        var next = PacketMigrationScanner.Migration.suffix(List.of(), List.of(
+                new WireMigration.Binding(2, -1, "int", "NetworkBuffer.VAR_INT", "73"),
+                new WireMigration.Binding(3, -1, "String", "NetworkBuffer.STRING", "\"arbitrary\"")))
+                .withPacket(migration.packet());
+        RetainedPacketMigrator.apply(root, List.of(next));
+        final String composed = Files.readString(source);
+        RetainedPacketMigrator.apply(root, List.of(next));
+        assertEquals(composed, Files.readString(source));
+        assertEquals(2, occurrences(composed, "wireSuffixDelegate ="));
+        assertTrue(composed.contains("buffer.write(NetworkBuffer.VAR_INT, 73)"));
+        assertTrue(composed.contains("buffer.write(NetworkBuffer.STRING, \"arbitrary\")"));
+        assertTrue(composed.contains("Added field cannot be represented by the retained API"));
     }
 
     @Test
@@ -415,9 +429,9 @@ class RetainedPacketMigratorTest {
         RetainedPacketMigrator.apply(root, migrations);
 
         assertEquals(migrated, Files.readString(data));
-        assertEquals(4, occurrences(migrated, "BYTE_ARRAY.transform(BitSet::valueOf, BitSet::toByteArray)"));
-        assertEquals(2, occurrences(migrated,
-                "NetworkBuffer.BYTE_ARRAY.transform(BitSet::valueOf, BitSet::toByteArray)"));
+        assertEquals(4, occurrences(migrated, "BYTE_ARRAY.transform(java.util.BitSet::valueOf, java.util.BitSet::toByteArray)"));
+        assertEquals(4, occurrences(migrated,
+                "NetworkBuffer.BYTE_ARRAY.transform(java.util.BitSet::valueOf, java.util.BitSet::toByteArray)"));
         assertTrue(!migrated.contains("BITSET, SectionData::"));
         assertTrue(!migrated.contains("NetworkBuffer.BITSET, SectionData::"));
     }
@@ -517,9 +531,8 @@ class RetainedPacketMigratorTest {
         final Map<String, Integer> ids = new LinkedHashMap<>();
         ids.put("QUIET", 11);
         ids.put("LOUD", 3);
-        return new PacketMigrationScanner.Migration(
-                new PacketUpdater.RetainedPacket(className, serializer, "before", "after"),
-                PacketMigrationScanner.Kind.OPTIONAL_ENUM, path, ids, "wire/Tone", -1, -1, false);
+        return PacketMigrationScanner.Migration.codec(path, CodecChange.enumeration("NetworkBuffer.OPTIONAL_VAR_INT", ids, true), "wire/Tone")
+                .withPacket(new PacketUpdater.RetainedPacket(className, serializer, "before", "after"));
     }
 
     private static PacketMigrationScanner.Migration semanticMigration(String className,
@@ -532,9 +545,8 @@ class RetainedPacketMigratorTest {
     }
 
     private static PacketMigrationScanner.Migration bitSetMigration(String className, List<Integer> path) {
-        return new PacketMigrationScanner.Migration(
-                new PacketUpdater.RetainedPacket(className, className + ".SERIALIZER", "before", "after"),
-                PacketMigrationScanner.Kind.BYTE_ARRAY_BIT_SET, path, Map.of(), "", -1, -1, false);
+        return PacketMigrationScanner.Migration.codec(path, CodecChange.functions(new CodecFunctions.Adapter("java.util.BitSet", "NetworkBuffer.BYTE_ARRAY", "valueOf", "toByteArray")), "")
+                .withPacket(new PacketUpdater.RetainedPacket(className, className + ".SERIALIZER", "before", "after"));
     }
 
     private static void write(Path path, String source) throws Exception {

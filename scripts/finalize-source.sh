@@ -22,9 +22,7 @@ artifact_version=$(read_plan '.artifactVersion')
 
 server_jar="$target_directory/.nightstorm/minecraft-server.jar"
 baseline_server_jar="$target_directory/.nightstorm/baseline-minecraft-server.jar"
-loom_server_jar="$HOME/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/$minecraft_version/minecraft-merged-deobf-$minecraft_version.jar"
-test -f "$loom_server_jar"
-cp "$loom_server_jar" "$server_jar"
+test -f "$server_jar"
 
 test -f "$baseline_server_jar"
 

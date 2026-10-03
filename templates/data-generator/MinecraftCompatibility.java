@@ -4,6 +4,8 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 
 final class MinecraftCompatibility {
     private static final Method BLOCKS_MOTION = findMethod(BlockState.class, "blocksMotion");
@@ -13,16 +15,14 @@ final class MinecraftCompatibility {
 
     static HolderLookup.Provider vanillaLookup() {
         var type = net.minecraft.data.registries.VanillaRegistries.class;
-        for (String name : new String[]{"createWorldLookup", "createLookup"}) {
-            try {
-                return (HolderLookup.Provider) type.getMethod(name).invoke(null);
-            } catch (NoSuchMethodException ignored) {
-                // Try the other API spelling.
-            } catch (ReflectiveOperationException exception) {
-                throw new IllegalStateException("Unable to invoke VanillaRegistries." + name, exception);
-            }
+        var candidates = Arrays.stream(type.getMethods()).filter(method -> Modifier.isStatic(method.getModifiers())
+                && method.getParameterCount() == 0 && method.getReturnType().equals(HolderLookup.Provider.class)).toList();
+        if (candidates.size() != 1) throw new IllegalStateException("Cannot identify a unique vanilla registry lookup factory: " + candidates);
+        try {
+            return (HolderLookup.Provider) candidates.getFirst().invoke(null);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Unable to invoke vanilla registry lookup factory", exception);
         }
-        throw new IllegalStateException("No supported vanilla registry lookup factory found");
     }
 
     static boolean blocksMotion(BlockState state) {

@@ -41,8 +41,10 @@ data_generator_directory="${target_directory}.data-generator"
 rm -rf "$data_generator_directory"
 git clone "https://github.com/${data_generator_repository}.git" "$data_generator_directory"
 git -C "$data_generator_directory" checkout --detach "$data_generator_commit"
-bash "$nightstorm_root/scripts/install-registry-sync.sh" "$data_generator_directory" "$target_directory"
-bash "$nightstorm_root/scripts/install-data-generator-compat.sh" "$data_generator_directory"
+"$nightstorm_root/build/install/nightstorm/bin/nightstorm" install-integrations \
+  --generator "$data_generator_directory" --source "$target_directory" --templates "$nightstorm_root/templates"
+mkdir -p "$target_directory/.nightstorm"
+export NIGHTSTORM_VANILLA_JAR_OUTPUT="$target_directory/.nightstorm/vanilla-jar.txt"
 
 # MinestomDataGenerator is Minestom's existing bridge from vanilla data to its code generators.
 if [[ "$base_ref" == "$minestom_tag" ]]; then
@@ -55,21 +57,22 @@ fi
 test -n "$baseline_minecraft_version"
 perl -0pi -e 's/^minecraft = ".*"/minecraft = "'"$baseline_minecraft_version"'"/m' "$data_generator_directory/gradle/libs.versions.toml"
 pushd "$data_generator_directory" >/dev/null
-NIGHTSTORM_MINSTOM_SOURCE="$target_directory" EULA=true ./gradlew generateData --no-daemon
+NIGHTSTORM_MINSTOM_SOURCE="$target_directory" EULA=true ./gradlew -I "$nightstorm_root/scripts/data-generator.gradle" generateData --no-configuration-cache --no-daemon
 popd >/dev/null
-baseline_server_jar="$HOME/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/$baseline_minecraft_version/minecraft-merged-deobf-$baseline_minecraft_version.jar"
+baseline_server_jar=$(cat "$NIGHTSTORM_VANILLA_JAR_OUTPUT")
 test -f "$baseline_server_jar"
 mkdir -p "$target_directory/.nightstorm"
 cp "$baseline_server_jar" "$target_directory/.nightstorm/baseline-minecraft-server.jar"
 
 perl -0pi -e 's/^minecraft = ".*"/minecraft = "'"$minecraft_version"'"/m' "$data_generator_directory/gradle/libs.versions.toml"
 pushd "$data_generator_directory" >/dev/null
-NIGHTSTORM_MINSTOM_SOURCE="$target_directory" EULA=true ./gradlew generateData --no-daemon
-NIGHTSTORM_MINSTOM_SOURCE="$target_directory" EULA=true ./gradlew jar --no-daemon
+NIGHTSTORM_MINSTOM_SOURCE="$target_directory" EULA=true ./gradlew -I "$nightstorm_root/scripts/data-generator.gradle" generateData jar --no-configuration-cache --no-daemon
 popd >/dev/null
 
 data_jar=$(ls "$data_generator_directory/build/libs/"*.jar)
 cp "$data_jar" "$target_directory/.nightstorm/data.jar"
+cp "$(cat "$NIGHTSTORM_VANILLA_JAR_OUTPUT")" "$target_directory/.nightstorm/minecraft-server.jar"
+rm "$NIGHTSTORM_VANILLA_JAR_OUTPUT"
 
 # Use the generated data as a named module instead of copying its resources into Minestom's modules.
 perl -0pi -e 's/implementation\(libs\.minestomData\)/implementation(files(rootProject.projectDir.resolve(".nightstorm\/data.jar")))/g' \

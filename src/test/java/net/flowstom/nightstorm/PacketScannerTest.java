@@ -30,6 +30,8 @@ class PacketScannerTest {
             writeProtocol(output, "net/minecraft/network/protocol/game/GameProtocols",
                     "net/minecraft/network/protocol/game/GamePacketTypes", "CLIENTBOUND_BUNDLE",
                     "net/minecraft/network/protocol/game/ClientboundBundleDelimiterPacket", null, "withBundlePacket");
+            writeTypes(output, "net/minecraft/network/protocol/handshake/HandshakePacketTypes", "CLIENT_INTENTION", "SERVERBOUND");
+            writeTypes(output, "net/minecraft/network/protocol/game/GamePacketTypes", "CLIENTBOUND_BUNDLE", "CLIENTBOUND");
         }
 
         final var packets = PacketScanner.scan(jar).packets();
@@ -40,6 +42,39 @@ class PacketScannerTest {
                 "net.minecraft.network.protocol.handshake.HandshakePacketTypes#CLIENT_INTENTION",
                 "net.minecraft.network.protocol.handshake.ClientIntentionPacket", "existing-or-opaque"), handshake);
         assertEquals(0, bundle.id());
+    }
+
+    @Test
+    void derivesDirectionFromConstructorRatherThanMisleadingFieldNames() throws Exception {
+        final var jar = Files.createTempFile("nightstorm-flow", ".jar");
+        try (var output = new JarOutputStream(Files.newOutputStream(jar))) {
+            String owner = "net/minecraft/network/protocol/game/OtherPacketTypes";
+            writeProtocol(output, "net/minecraft/network/protocol/game/OtherProtocols", owner,
+                    "CLIENTBOUND_MISLEADING", "synthetic/UnrelatedPacket", "CODEC", "addPacket");
+            writeTypes(output, owner, "CLIENTBOUND_MISLEADING", "SERVERBOUND");
+        }
+        assertEquals("serverbound", PacketScanner.scan(jar).packets().getFirst().direction());
+    }
+
+    private static void writeTypes(JarOutputStream output, String owner, String field, String flow) throws Exception {
+        var writer = new ClassWriter(0);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        var method = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        method.visitTypeInsn(Opcodes.NEW, "net/minecraft/network/protocol/PacketType");
+        method.visitInsn(Opcodes.DUP);
+        method.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/network/protocol/PacketFlow", flow,
+                "Lnet/minecraft/network/protocol/PacketFlow;");
+        method.visitInsn(Opcodes.ACONST_NULL);
+        method.visitMethodInsn(Opcodes.INVOKESPECIAL, "net/minecraft/network/protocol/PacketType", "<init>",
+                "(Lnet/minecraft/network/protocol/PacketFlow;Ljava/lang/Object;)V", false);
+        method.visitFieldInsn(Opcodes.PUTSTATIC, owner, field, "Lnet/minecraft/network/protocol/PacketType;");
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(4, 0);
+        method.visitEnd();
+        writer.visitEnd();
+        output.putNextEntry(new JarEntry(owner + ".class"));
+        output.write(writer.toByteArray());
+        output.closeEntry();
     }
 
     private static void writeProtocol(JarOutputStream output, String className, String packetTypesOwner,

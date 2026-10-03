@@ -20,6 +20,8 @@ public final class Main {
             case "scan-packets" -> scanPackets(options);
             case "update-packets" -> updatePackets(options);
             case "update-source-width" -> updateSourceWidth(options);
+            case "install-integrations" -> IntegrationInstaller.install(options.requiredPath("generator"),
+                    options.requiredPath("source"), options.requiredPath("templates"));
             default -> {
                 usage();
                 System.exit(2);
@@ -78,5 +80,6 @@ public final class Main {
         System.err.println("  nightstorm scan-packets --jar <minecraft-server.jar> --output <packet-schema.json>");
         System.err.println("  nightstorm update-packets --baseline-jar <server.jar> --jar <server.jar> --source <minestom> --output <packet-schema.json>");
         System.err.println("  nightstorm update-source-width --source <root> --archive <data.jar> --resource <file.json> --value-path <path> --file <source.java> --constant <name>");
+        System.err.println("  nightstorm install-integrations --generator <data-generator> --source <minestom> --templates <templates>");
     }
 }

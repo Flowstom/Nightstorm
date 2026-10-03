@@ -24,6 +24,43 @@ class PacketMigrationScannerTest {
     private static final String STREAM_CODEC = "Lnet/minecraft/network/codec/StreamCodec;";
 
     @Test
+    void derivesMultipleScalarSuffixDefaultsFromCompatibilityConstructor() throws Exception {
+        var before = WireFixtures.node(RECORD, List.of("amount:I"), List.of("VAR_INT"), List.of(0), true);
+        var after = WireFixtures.node(RECORD, List.of("amount:I", "active:Z", "sequence:J"),
+                List.of("VAR_INT", "BOOL", "LONG"), List.of(0, 1, 2), true);
+        var constructor = after.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "(I)V", null, null);
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitVarInsn(Opcodes.ILOAD, 1);
+        constructor.visitInsn(Opcodes.ICONST_1);
+        constructor.visitLdcInsn(-37L);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, RECORD, "<init>", "(IZJ)V", false);
+        constructor.visitInsn(Opcodes.RETURN);
+        constructor.visitMaxs(5, 2);
+        constructor.visitEnd();
+        var oldBytes = new ClassWriter(0);
+        before.accept(oldBytes);
+        var newBytes = new ClassWriter(0);
+        after.accept(newBytes);
+        var migration = scan(jar(Map.of(RECORD, oldBytes.toByteArray())), jar(Map.of(RECORD, newBytes.toByteArray()))).getFirst();
+        assertEquals(PacketMigrationScanner.Kind.WIRE_SUFFIX, migration.kind());
+        assertEquals(List.of("true", "-37L"), migration.suffix().stream().map(WireMigration.Binding::constant).toList());
+        assertEquals(List.of("NetworkBuffer.BOOLEAN", "NetworkBuffer.LONG"), migration.suffix().stream().map(WireMigration.Binding::networkType).toList());
+    }
+
+    @Test
+    void rejectsConflictingSuffixDefaultsAcrossMatchingCallers() throws Exception {
+        var oldClasses = new LinkedHashMap<String, byte[]>();
+        var newClasses = new LinkedHashMap<String, byte[]>();
+        oldClasses.put(RECORD, compositeCodecRecord(RECORD, List.of(component("amount", "I", null))));
+        newClasses.put(RECORD, compositeCodecRecord(RECORD, List.of(component("amount", "I", null), component("active", "Z", null))));
+        for (var name : List.of("synthetic/One", "synthetic/Two")) {
+            oldClasses.put(name, constructorCaller(name, "(I)V", false));
+            newClasses.put(name, constructorCaller(name, "(IZ)V", name.endsWith("One")));
+        }
+        assertThrows(IllegalStateException.class, () -> scan(jar(oldClasses), jar(newClasses)));
+    }
+
+    @Test
     void separatesCatalogRowsFromEnvelopeCodecsAndStillDetectsEnvelopeChanges() throws Exception {
         final var baseline = catalogPacket(1, "STRING_UTF8");
         final var target = catalogPacket(2, "STRING_UTF8");
@@ -109,7 +146,7 @@ class PacketMigrationScannerTest {
         final List<PacketMigrationScanner.Migration> migrations = scan(baseline, target);
 
         assertEquals(1, migrations.size());
-        assertEquals(PacketMigrationScanner.Kind.OPTIONAL_ENUM, migrations.getFirst().kind());
+        assertEquals(PacketMigrationScanner.Kind.CODEC_REWRITE, migrations.getFirst().kind());
         assertEquals(List.of(0), migrations.getFirst().path());
         assertEquals(Map.of("ALPHA", 11, "BETA", 3), migrations.getFirst().ids());
         assertEquals(ENUM, migrations.getFirst().targetEnum());
@@ -182,22 +219,24 @@ class PacketMigrationScannerTest {
         final List<Component> baselineComponents = List.of(
                 component("anchor", "Lsynthetic/wire/Anchor;", null),
                 component("lines", "[Ljava/lang/String;", null),
-                component("isFrontText", "Z", null));
+                component("selected", "Z", null));
         final List<Component> targetComponents = List.of(
                 baselineComponents.getFirst(),
                 component("lines", "Ljava/util/List;", "Ljava/util/List<Ljava/lang/String;>;"),
                 component("side", "L" + side + ";", null));
-        final Path baseline = jar(Map.of(RECORD, legacyBooleanStringRecord(baselineComponents, 4)));
+        final Path baseline = jar(Map.of(RECORD, legacyBooleanStringRecord(baselineComponents, 4),
+                "synthetic/wire/Consumer", booleanConsumer(null, "selected", "UNRELATED", false)));
         final Map<String, byte[]> targetClasses = new LinkedHashMap<>();
         targetClasses.put(RECORD, reorderedTargetRecord(targetComponents, side, 4));
-        targetClasses.put(side, binaryEnumClass(side, "FRONT", 0, "BACK", 1));
+        targetClasses.put(side, binaryEnumClass(side, "UNRELATED", 17, "ANOTHER", 42));
+        targetClasses.put("synthetic/wire/Consumer", booleanConsumer(side, "side", "UNRELATED", false));
 
         final PacketMigrationScanner.Migration migration = scan(baseline, jar(targetClasses)).getFirst();
 
         assertEquals(PacketMigrationScanner.Kind.REORDERED_BOOLEAN_ENUM, migration.kind());
         assertEquals(4, migration.fixedSize());
-        assertEquals(1, migration.falseId());
-        assertEquals(0, migration.trueId());
+        assertEquals(42, migration.falseId());
+        assertEquals(17, migration.trueId());
     }
 
     @Test
@@ -205,14 +244,14 @@ class PacketMigrationScannerTest {
         final String choice = "synthetic/wire/Choice";
         final List<Component> baselineComponents = List.of(
                 component("anchor", "Lsynthetic/wire/Anchor;", null),
-                component("lines", "[Ljava/lang/String;", null), component("selected", "Z", null));
+                component("lines", "[Ljava/lang/String;", null), component("isFrontText", "Z", null));
         final List<Component> targetComponents = List.of(baselineComponents.getFirst(),
                 component("lines", "Ljava/util/List;", "Ljava/util/List<Ljava/lang/String;>;"),
                 component("choice", "L" + choice + ";", null));
         final Path baseline = jar(Map.of(RECORD, legacyBooleanStringRecord(baselineComponents, 2)));
         final Map<String, byte[]> targetClasses = new LinkedHashMap<>();
         targetClasses.put(RECORD, reorderedTargetRecord(targetComponents, choice, 2));
-        targetClasses.put(choice, binaryEnumClass(choice, "ALPHA", 0, "BETA", 1));
+        targetClasses.put(choice, binaryEnumClass(choice, "FRONT", 0, "BACK", 1));
 
         assertThrows(IllegalStateException.class, () -> scan(baseline, jar(targetClasses)));
     }
@@ -259,8 +298,8 @@ class PacketMigrationScannerTest {
 
         final PacketMigrationScanner.Migration migration = scan(jar(baselineClasses), jar(targetClasses)).getFirst();
 
-        assertEquals(PacketMigrationScanner.Kind.APPENDED_BOOLEAN, migration.kind());
-        assertEquals(true, migration.defaultValue());
+        assertEquals(PacketMigrationScanner.Kind.WIRE_SUFFIX, migration.kind());
+        assertEquals("true", migration.suffix().getFirst().constant());
     }
 
     @Test
@@ -343,16 +382,62 @@ class PacketMigrationScannerTest {
                 component("isFrontText", "Z", null));
         final List<Component> targetComponents = List.of(baselineComponents.getFirst(),
                 component("slot", "L" + side + ";", null));
-        final Path baseline = jar(Map.of(RECORD, recordClass(baselineComponents, false)));
+        final Path baseline = jar(Map.of(RECORD, recordClass(baselineComponents, false),
+                "synthetic/wire/Consumer", booleanConsumer(null, "isFrontText", "FRONT", false)));
         final Map<String, byte[]> equivalent = new LinkedHashMap<>();
         equivalent.put(RECORD, compositeReferenceRecord(targetComponents, side, 1));
         equivalent.put(side, binaryEnumClass(side, "BACK", 0, "FRONT", 1));
+        equivalent.put("synthetic/wire/Consumer", booleanConsumer(side, "slot", "FRONT", false));
         final Map<String, byte[]> reversed = new LinkedHashMap<>();
         reversed.put(RECORD, compositeReferenceRecord(targetComponents, side, 1));
         reversed.put(side, binaryEnumClass(side, "BACK", 1, "FRONT", 0));
+        reversed.put("synthetic/wire/Consumer", booleanConsumer(side, "slot", "FRONT", false));
 
         assertEquals(List.of(), scan(baseline, jar(equivalent)));
+        var migration = scan(baseline, jar(reversed)).getFirst();
+        assertEquals(PacketMigrationScanner.Kind.CODEC_REWRITE, migration.kind());
+        org.junit.jupiter.api.Assertions.assertTrue(migration.codec().expression().contains("value ? 0 : 1"));
+
+        // Identical names are insufficient if the argument is negated before entering the decision.
+        reversed.put("synthetic/wire/Consumer", booleanConsumer(side, "slot", "FRONT", true));
         assertThrows(IllegalStateException.class, () -> scan(baseline, jar(reversed)));
+    }
+
+    private static byte[] booleanConsumer(String enumOwner, String accessor, String trueConstant, boolean transformed) {
+        final String owner = "synthetic/wire/Consumer";
+        final String type = enumOwner == null ? "Z" : "L" + enumOwner + ";";
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        var method = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "consume", "(L" + RECORD + ";)I", null, null);
+        method.visitVarInsn(Opcodes.ALOAD, 0);
+        method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, RECORD, accessor, "()" + type, false);
+        if (transformed) {
+            method.visitMethodInsn(Opcodes.INVOKESTATIC, "synthetic/Opaque", "transform", "(" + type + ")" + type, false);
+        }
+        method.visitMethodInsn(Opcodes.INVOKESTATIC, owner, "forward", "(" + type + ")I", false);
+        method.visitInsn(Opcodes.IRETURN);
+        method.visitMaxs(0, 0);
+        method.visitEnd();
+        method = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "forward", "(" + type + ")I", null, null);
+        method.visitVarInsn(enumOwner == null ? Opcodes.ILOAD : Opcodes.ALOAD, 0);
+        method.visitMethodInsn(Opcodes.INVOKESTATIC, owner, "select", "(" + type + ")I", false);
+        method.visitInsn(Opcodes.IRETURN);
+        method.visitMaxs(0, 0);
+        method.visitEnd();
+        method = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "select", "(" + type + ")I", null, null);
+        var whenFalse = new org.objectweb.asm.Label();
+        method.visitVarInsn(enumOwner == null ? Opcodes.ILOAD : Opcodes.ALOAD, 0);
+        if (enumOwner != null) method.visitFieldInsn(Opcodes.GETSTATIC, enumOwner, trueConstant, type);
+        method.visitJumpInsn(enumOwner == null ? Opcodes.IFEQ : Opcodes.IF_ACMPNE, whenFalse);
+        method.visitIntInsn(Opcodes.BIPUSH, 23);
+        method.visitInsn(Opcodes.IRETURN);
+        method.visitLabel(whenFalse);
+        method.visitIntInsn(Opcodes.BIPUSH, 71);
+        method.visitInsn(Opcodes.IRETURN);
+        method.visitMaxs(0, 0);
+        method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
     }
 
     @Test
@@ -372,8 +457,8 @@ class PacketMigrationScannerTest {
 
         final PacketMigrationScanner.Migration migration = scan(jar(baselineClasses), jar(targetClasses)).getFirst();
 
-        assertEquals(PacketMigrationScanner.Kind.APPENDED_BOOLEAN, migration.kind());
-        assertEquals(true, migration.defaultValue());
+        assertEquals(PacketMigrationScanner.Kind.WIRE_SUFFIX, migration.kind());
+        assertEquals("true", migration.suffix().getFirst().constant());
     }
 
     @Test
@@ -402,16 +487,17 @@ class PacketMigrationScannerTest {
         assertEquals(4, migrations.size());
         assertEquals(List.of(List.of(2, 0), List.of(2, 1), List.of(2, 2), List.of(2, 3)),
                 migrations.stream().map(PacketMigrationScanner.Migration::path).toList());
-        assertEquals(List.of(PacketMigrationScanner.Kind.BYTE_ARRAY_BIT_SET),
+        assertEquals(List.of(PacketMigrationScanner.Kind.CODEC_REWRITE),
                 migrations.stream().map(PacketMigrationScanner.Migration::kind).distinct().toList());
     }
 
     @Test
-    void rejectsBitSetFieldWhoseNamedCodecUsesDifferentStorage() throws Exception {
+    void acceptsProvenLongArrayStorageWithoutAssumingTheNamedCodecMustUseBytes() throws Exception {
         final Map<String, byte[]> baselineClasses = bitSetMigrationClasses(true, BitSetBacking.LONG_ARRAY);
         final Map<String, byte[]> targetClasses = bitSetMigrationClasses(false, BitSetBacking.LONG_ARRAY);
 
-        assertThrows(IllegalStateException.class, () -> scan(jar(baselineClasses), jar(targetClasses)));
+        var migrations = scan(jar(baselineClasses), jar(targetClasses));
+        assertEquals("NetworkBuffer.LONG_ARRAY.transform(java.util.BitSet::valueOf, java.util.BitSet::toLongArray)", migrations.getFirst().codec().expression());
     }
 
     @Test
@@ -713,12 +799,21 @@ class PacketMigrationScannerTest {
         constructor.visitInsn(Opcodes.RETURN);
         constructor.visitMaxs(3, 4);
         constructor.visitEnd();
+        final MethodVisitor mapper = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "encodeId", "(L" + owner + ";)I", null, null);
+        mapper.visitVarInsn(Opcodes.ALOAD, 0);
+        mapper.visitFieldInsn(Opcodes.GETFIELD, owner, "wireId", "I");
+        mapper.visitInsn(Opcodes.IRETURN);
+        mapper.visitMaxs(1, 1);
+        mapper.visitEnd();
         final MethodVisitor clinit = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
         clinit.visitCode();
         writeConstant(clinit, owner, firstName, 0, firstId, false);
         writeConstant(clinit, owner, secondName, 1, secondId, false);
         clinit.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/network/codec/ByteBufCodecs",
                 "VAR_INT", STREAM_CODEC);
+        clinit.visitInvokeDynamicInsn("applyAsInt", "()Ljava/util/function/ToIntFunction;",
+                new Handle(Opcodes.H_INVOKESTATIC, "synthetic/bootstrap/Factory", "bootstrap", "()V", false),
+                new Handle(Opcodes.H_INVOKESTATIC, owner, "encodeId", "(L" + owner + ";)I", false));
         clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraft/network/codec/ByteBufCodecs",
                 "idMapper", "()" + STREAM_CODEC, false);
         clinit.visitFieldInsn(Opcodes.PUTSTATIC, owner, "STREAM_CODEC", STREAM_CODEC);

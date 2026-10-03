@@ -26,7 +26,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build Nightstorm
-        run: ./gradlew installDist --no-daemon
+        run: ./gradlew test installDist --no-daemon
 
       - name: Plan update
         id: plan

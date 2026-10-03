@@ -21,18 +21,19 @@ final class PacketScanner {
     static PacketReport scan(Path serverJar) throws IOException {
         final List<PacketCandidate> packets = new ArrayList<>();
         try (var jar = new JarFile(serverJar.toFile())) {
+            final var directions = new PacketDirections(jar);
             jar.stream()
                     .map(entry -> entry.getName())
                     .filter(name -> name.startsWith("net/minecraft/network/protocol/"))
                     .filter(name -> name.endsWith("Protocols.class"))
                     .filter(name -> !name.contains("$"))
                     .sorted()
-                    .forEach(name -> scanProtocol(jar, name, packets));
+                    .forEach(name -> scanProtocol(jar, name, packets, directions));
         }
         return new PacketReport(Instant.now().toString(), packets);
     }
 
-    private static void scanProtocol(JarFile jar, String entryName, List<PacketCandidate> output) {
+    private static void scanProtocol(JarFile jar, String entryName, List<PacketCandidate> output, PacketDirections directions) {
         final String state = state(entryName);
         if (state == null) {
             return;
@@ -78,7 +79,7 @@ final class PacketScanner {
                             } else {
                                 return;
                             }
-                            final String direction = direction(packetType);
+                            final String direction = directions.direction(packetType);
                             if (direction != null && codecOwner != null) {
                                 final String key = state + "/" + direction;
                                 final int id = ids.getOrDefault(key, 0);
@@ -102,13 +103,6 @@ final class PacketScanner {
         if (entryName.contains("/login/")) return "login";
         if (entryName.contains("/status/")) return "status";
         if (entryName.contains("/handshake/")) return "handshake";
-        return null;
-    }
-
-    private static String direction(String packetType) {
-        if (packetType.contains("#CLIENTBOUND_")) return "clientbound";
-        if (packetType.contains("#SERVERBOUND_")) return "serverbound";
-        if (packetType.endsWith("#CLIENT_INTENTION")) return "serverbound";
         return null;
     }
 

@@ -16,11 +16,23 @@ Complex retained components reuse a source codec only after Nightstorm matches t
 
 Adapter provenance is saved by packet and nested component path in `.nightstorm/wire-adapters.json`. Subsequent migrations compose with the saved projection rather than assuming the retained source record acquired every upstream field. When a source API is synchronized, its saved schema advances to the target. The metadata and generated Java changes commit and roll back together through `SourceTransaction`. Repeated applications of the same migration are idempotent.
 
-## Scope of this increment
+## Inferred codec changes
+
+Portable JDK carrier codecs use one shared `CODEC_REWRITE` path. `CodecFunctions` verifies a value factory and inverse accessor around matching buffer operations in both directions. This includes changing a bit set between long-array and byte-array storage, without a bit-set-specific serializer. Unrelated carrier fixtures exercise the same implementation. Enum-to-optional changes use the shared codec-expression renderer after checking the upstream optional encoding and deriving every enum ID.
+
+`WIRE_SUFFIX` supports several added scalar fields at once. Defaults come from a compatibility constructor, constant argument provenance in corresponding upstream callers, or a proven behavioral guard. A behavioral boolean default requires a folded handler to match the baseline, or an unchanged unconditional prefix around the new guard; branch polarity alone is insufficient. Conflicting defaults and opaque computations stop migration. The generated decoder checks defaults instead of silently discarding values that the retained API cannot represent. Successive suffix migrations compose and repeat applications are idempotent.
+
+Boolean-to-enum polarity follows the packet accessor into corresponding consumers and forwarding methods. Pure selection methods establish which old boolean branch corresponds to each new enum constant, including compiler-generated switch tables. Enum names and component names do not determine the mapping. Unsupported computations cannot establish a correspondence.
+
+Packet direction comes from the actual `PacketFlow` constructor argument, following static factories where necessary. Packet field prefixes and individual packet-name exceptions are no longer used.
+
+## Remaining specialized rules
 
 The teleport-confirm and particle-specific matchers and serializers have been removed. Their changes now exercise field addition, constructor-derived repeated arguments/defaults, reordering and integer encoding changes. Tests also use unrelated packet and field names, a nonzero enum default, invalid bindings, unsupported constructor bodies, narrowing encodings and successive schema migrations.
 
-This is not an interpreter for arbitrary codecs or Minecraft gameplay. Complex optional/dispatch/nested migrations still use the existing specialized rules where available. Source API expansion is limited to direct projections with supported collection additions and removals. In particular, the retained teleport API still exposes only its ID, and the retained particle API cannot express independent axis speeds or arbitrary randomization modes. Constructor inference proves compatibility mappings, not new listener behavior. The separate data-accessor resolver is described in [enum-data-access.md](enum-data-access.md).
+Three packet shape adapters remain specialized: the three-field boolean/string-list reorder, the linear position-path dispatch, and moving a pair of nested floats. The boolean mapping in the first adapter is inferred, but its shape matcher and serializer still assume that layout. The other two retain representation assumptions, including duplicated position values and zero float placeholders. These are not a general nested/dispatch interpreter.
+
+Source API expansion is limited to direct projections with supported collection additions and removals. In particular, the retained teleport API still exposes only its ID, and the retained particle API cannot express independent axis speeds or arbitrary randomization modes. Constructor inference proves compatibility mappings, not new listener behavior. Jumping directly from 26.2 to 26.4-snapshot-2 still encounters unsupported intermediate schema changes; the normal 26.3-rc-3 continuation is validated. The separate data-accessor resolver is described in [enum-data-access.md](enum-data-access.md), and installer/data limitations in [source-integrations.md](source-integrations.md).
 
 ## Validation
 
