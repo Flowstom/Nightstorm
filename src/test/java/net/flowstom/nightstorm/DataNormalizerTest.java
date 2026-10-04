@@ -17,7 +17,7 @@ class DataNormalizerTest {
         Files.createDirectories(classes);
         String gson = Path.of(com.google.gson.Gson.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
         assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-cp", gson, "-d", classes.toString(),
-                "templates/data-generator/NightstormDataNormalizer.java"));
+                "templates/data-generator/NightstormDataNormalizer.java", "templates/data-generator/DataMigration.java"));
         var metadata = directory.resolve("shapes.json");
         Files.writeString(metadata, """
                 {"lists":{"minecraft:unrelated":{"fields":["second","first"],"scalar":"integer"}},

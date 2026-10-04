@@ -14,7 +14,8 @@ final class BytecodeArguments {
             var interpreter = new SourceInterpreter(Opcodes.ASM9) {
                 @Override public SourceValue copyOperation(AbstractInsnNode instruction, SourceValue value) {
                     return value.insns.isEmpty() && instruction instanceof VarInsnNode load
-                            && (load.getOpcode() == Opcodes.ALOAD || load.getOpcode() == Opcodes.ILOAD)
+                            && (load.getOpcode() == Opcodes.ALOAD || load.getOpcode() == Opcodes.ILOAD
+                            || load.getOpcode() == Opcodes.LLOAD || load.getOpcode() == Opcodes.FLOAD || load.getOpcode() == Opcodes.DLOAD)
                             ? new SourceValue(value.getSize(), instruction) : value;
                 }
             };

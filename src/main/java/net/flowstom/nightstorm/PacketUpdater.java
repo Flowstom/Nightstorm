@@ -77,6 +77,12 @@ final class PacketUpdater {
         RetainedPacketMigrator.apply(sourceRoot, migrations);
         final var warnings = new ArrayList<>(result.warnings());
         for (var migration : migrations) {
+            if (migration.dispatch() != null) warnings.add(migration.packet().className() + " at " + migration.path()
+                    + ": Source API exposes all dispatch variants " + migration.dispatch().dispatch().variants().stream().map(WireDispatch.Variant::name).toList()
+                    + "; the legacy constructor selects the uniquely matched variant and accepts obsolete arguments.");
+            if (migration.move() != null) warnings.add(migration.packet().className() + " at " + migration.path()
+                    + ": Source API stores moved fields " + migration.move().fields().stream().map(WireFieldMove.Moved::name).toList()
+                    + " independently of optional nested values; legacy constructors project the original nested fields.");
             if (migration.wire() == null) continue;
             final var plan = migration.wire();
             final var retained = plan.bindings().stream().filter(b -> b.source() >= 0).map(WireMigration.Binding::source)

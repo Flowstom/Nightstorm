@@ -46,6 +46,18 @@ class IntegrationInstallerTest {
                     }
                 }
                 """);
+        var scalarSource = write(generator.resolve("custom/net/minestom/generators/Values.java"), """
+                package net.minestom.generators;
+                class Values {
+                    void generate() {
+                        var registry = Registry.VALUES;
+                        for (var owner : registry) {
+                            for (Unrelated value : owner.entries()) consume(value);
+                        }
+                    }
+                    void consume(Unrelated state) { append(json, "enabled", state.enabled(), boolean.class); }
+                }
+                """);
         var untouched = write(source.resolve("Other.java"), "class Other {   int unchanged; }");
         IntegrationInstaller.install(generator, source, Path.of("templates"));
         var onceMain = Files.readString(main);
@@ -54,6 +66,8 @@ class IntegrationInstallerTest {
         assertTrue(onceRegistry.contains("appendPackets(outgoing, synchronizedValues(lookup), skip)"));
         assertTrue(onceRegistry.contains("appendTags(outgoing, taggedValues(lookup))"));
         assertTrue(Files.readString(enumSource).contains("EnumDataAccess.read(shape, \"presentation\", \"rgb\", 0xFFFFFF)"));
+        assertTrue(Files.readString(scalarSource).contains("ScalarDataAccess.read(state, \"enabled\", boolean.class)"), Files.readString(scalarSource));
+        assertTrue(Files.readString(scalarSource).contains("ScalarDataAccess.domain(Unrelated.class"));
         assertEquals("class Other {   int unchanged; }", Files.readString(untouched));
         IntegrationInstaller.install(generator, source, Path.of("templates"));
         assertEquals(onceMain, Files.readString(main));

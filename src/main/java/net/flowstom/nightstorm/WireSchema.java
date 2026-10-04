@@ -42,7 +42,11 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
             var components = components(node);
             var composite = composite(node, components, classes);
             if (composite.isPresent()) return composite;
-            return manual(node, components);
+            Optional<WireSchema> straight;
+            try { straight = manual(node, components); }
+            catch (UnsupportedOperationException exception) { straight = Optional.empty(); }
+            if (straight.isPresent()) return straight;
+            return boundedManual(node, components, classes);
         } catch (UnsupportedOperationException | IllegalArgumentException exception) {
             return Optional.empty();
         }
@@ -69,7 +73,9 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
             }
             if (valid && Arrays.stream(ordered).noneMatch(Objects::isNull)) return List.of(ordered);
         }
-        throw new UnsupportedOperationException("Cannot establish constructor field identities for " + node.name);
+        // Some manual packets have expanded constructors (for example individual array elements).
+        // Preserve field identity here; the wire reader/writer establishes their order separately.
+        return fields;
     }
 
     static boolean codecDescriptor(String descriptor, java.util.function.Function<String, ClassNode> classes) {
@@ -100,6 +106,12 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                     if (composed) return Optional.empty();
                     operands.add(codecDescriptor(field.desc, classes) ? new Codec(field.owner, field.name)
                             : "field:" + field.owner + "#" + field.name + ":" + field.desc);
+                } else if (instruction instanceof IntInsnNode literal && Set.of(Opcodes.BIPUSH, Opcodes.SIPUSH).contains(literal.getOpcode())) {
+                    operands.add(literal.operand);
+                } else if (instruction instanceof LdcInsnNode literal && literal.cst instanceof Integer) {
+                    operands.add(literal.cst);
+                } else if (instruction.getOpcode() >= Opcodes.ICONST_M1 && instruction.getOpcode() <= Opcodes.ICONST_5) {
+                    operands.add(instruction.getOpcode() - Opcodes.ICONST_0);
                 } else if (instruction instanceof InvokeDynamicInsnNode dynamic) {
                     int component = accessor(dynamic, node, components);
                     if (component >= 0) {
@@ -115,7 +127,15 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                         operands.add(operation == null ? "lambda:" + dynamic.desc : "operation:" + operation);
                     }
                 } else if (instruction instanceof MethodInsnNode call) {
-                    if (call.owner.equals(BYTE_CODECS) && Set.of("list", "optional").contains(call.name)
+                    if (call.owner.equals(BYTE_CODECS) && call.name.equals("stringUtf8") && operands.size() == 1
+                            && operands.getFirst() instanceof Integer limit && limit >= 0) {
+                        operands.clear();
+                        operands.add(new Codec(BYTE_CODECS, "STRING_UTF8").apply("limit:" + limit));
+                    } else if (call.owner.equals(BYTE_CODECS) && call.name.equals("fixedSizeList") && operands.size() == 2
+                            && operands.getLast() instanceof Integer size && size >= 0 && size <= 4096) {
+                        operands.removeLast();
+                        operands.add("operation:fixed:" + size);
+                    } else if (call.owner.equals(BYTE_CODECS) && Set.of("list", "optional").contains(call.name)
                             && Type.getArgumentTypes(call.desc).length == 0) {
                         operands.add("operation:" + call.name);
                     } else if (call.owner.equals(BYTE_CODECS) && call.name.equals("map")
@@ -171,6 +191,19 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
             }
         }
         return -1;
+    }
+
+    private static Optional<WireSchema> boundedManual(ClassNode node, List<Component> components,
+                                                       java.util.function.Function<String, ClassNode> classes) {
+        List<Field> reads = null, writes = null;
+        for (MethodNode method : node.methods) {
+            if (method.name.equals("<init>") && method.desc.matches("\\(Lnet/minecraft/network/\\w*FriendlyByteBuf;\\)V"))
+                reads = WireManual.scan(node, method, components, true, classes);
+            else if (method.name.equals("write") && method.desc.matches("\\(Lnet/minecraft/network/\\w*FriendlyByteBuf;\\)V"))
+                writes = WireManual.scan(node, method, components, false, classes);
+        }
+        if (reads == null || !reads.equals(writes)) return Optional.empty();
+        return Optional.of(new WireSchema(node.name, components, reads));
     }
 
     private static Optional<WireSchema> manual(ClassNode node, List<Component> components) {

@@ -84,11 +84,19 @@ final class PacketMigrationScanner {
             final List<RecordComponentNode> afterComponents = components(after);
             final Optional<List<String>> beforeShape = streamShape(baseline, baselineOwner, new HashSet<>());
             final Optional<List<String>> afterShape = streamShape(target, targetOwner, new HashSet<>());
-            final var wireProjection = WireMigration.plan(before, after, target::readIfPresent);
+            final var wireProjection = WireMigration.plan(before, after, baseline::readIfPresent, target::readIfPresent,
+                    (oldField, newField) -> {
+                        var enumeration = target.readIfPresent(objectType(newField.descriptor()));
+                        if (enumeration == null) return null;
+                        return booleanIds(baseline, target, before,
+                                new RecordComponentNode(oldField.name(), oldField.descriptor(), oldField.signature()), after,
+                                new RecordComponentNode(newField.name(), newField.descriptor(), newField.signature()), enumeration);
+                    });
+            boolean changedDispatch = !WireDispatch.catalogs(before, baseline::readIfPresent).equals(WireDispatch.catalogs(after, target::readIfPresent));
             boolean changedBoolean = beforeComponents.size() == afterComponents.size()
                     && java.util.stream.IntStream.range(0, beforeComponents.size()).anyMatch(i ->
                     beforeComponents.get(i).descriptor.equals("Z") && !afterComponents.get(i).descriptor.equals("Z"));
-            if (!changedBoolean && wireEquivalent(beforeShape, afterShape) && wireProjection.isEmpty()) return;
+            if (!changedBoolean && !changedDispatch && wireEquivalent(beforeShape, afterShape) && wireProjection.isEmpty()) return;
             final boolean[] migrated = {false};
             final java.util.function.Consumer<Migration> accept = migration -> {
                 migrated[0] = true;
@@ -100,6 +108,7 @@ final class PacketMigrationScanner {
                 accept.accept(semantic.get());
                 return;
             }
+            if (changedDispatch) throw new IllegalStateException("Changed dispatch catalog requires a source API projection at " + path);
             if (beforeComponents.size() != afterComponents.size()) {
                 throw new IllegalStateException("Retained type " + baselineOwner + " -> " + targetOwner
                         + " component count changed at " + path + " from "
@@ -198,21 +207,18 @@ final class PacketMigrationScanner {
                                                           ClassNode after, List<RecordComponentNode> beforeComponents,
                                                           List<RecordComponentNode> afterComponents,
                                                           List<Integer> path, Optional<WireMigration> wireProjection) {
-        final Optional<Migration> positioned = movedNestedFloatPair(baseline, target, before, after,
+        final Optional<Migration> positioned = movedNestedFields(baseline, target, before, after,
                 beforeComponents, afterComponents, path);
         if (positioned.isPresent()) return positioned;
-        final Optional<Migration> reordered = reorderedBooleanEnum(baseline, target, before, after, beforeComponents,
-                afterComponents, path);
-        if (reordered.isPresent()) return reordered;
-        final Optional<Migration> positionPath = linearPositionPath(baseline, target, before, after,
-                beforeComponents, afterComponents, path);
+        final Optional<Migration> positionPath = WireDispatch.plan(before, after, baseline::readIfPresent, target::readIfPresent)
+                .map(plan -> Migration.dispatch(path, plan));
         if (positionPath.isPresent()) return positionPath;
         final var appended = appendedPrimitive(baseline, target, before, after, beforeComponents, afterComponents, path);
         if (appended.isPresent()) return appended;
         return wireProjection.map(plan -> Migration.wire(plan, path));
     }
 
-    private static Optional<Migration> movedNestedFloatPair(Classes baseline, Classes target, ClassNode before,
+    private static Optional<Migration> movedNestedFields(Classes baseline, Classes target, ClassNode before,
                                                              ClassNode after,
                                                              List<RecordComponentNode> beforeComponents,
                                                              List<RecordComponentNode> afterComponents,
@@ -223,20 +229,9 @@ final class PacketMigrationScanner {
             final String wrapperOwner = collectionElement(afterComponents.get(index));
             if (beforeElement == null || wrapperOwner == null || beforeElement.equals(wrapperOwner)) continue;
             final ClassNode wrapper = target.readIfPresent(wrapperOwner);
-            final ClassNode nested = target.readIfPresent(beforeElement);
-            if (wrapper == null || nested == null) continue;
-            final List<RecordComponentNode> wrapperComponents = components(wrapper);
-            if (wrapperComponents.size() != 3
-                    || !wrapperComponents.getFirst().descriptor.equals('L' + beforeElement + ';')
-                    || !wrapperComponents.get(1).descriptor.equals("F")
-                    || !wrapperComponents.get(2).descriptor.equals("F")
-                    || !componentReferencesCompositeCodec(wrapper, wrapperComponents.getFirst(), beforeElement, nested)
-                    || !componentReferencesCodec(wrapper, wrapperComponents.get(1), CODEC_OWNER, "FLOAT")
-                    || !componentReferencesCodec(wrapper, wrapperComponents.get(2), CODEC_OWNER, "FLOAT")) continue;
-            final List<String> floatNames = List.of(wrapperComponents.get(1).name, wrapperComponents.get(2).name);
-            if (nestedFloatPairMoved(baseline, target, beforeElement, floatNames)) {
-                return Optional.of(Migration.movedNestedFloats(append(path, index)));
-            }
+            if (wrapper == null) continue;
+            var move = WireFieldMove.scan(beforeElement, wrapper, baseline::readIfPresent, target::readIfPresent);
+            if (move.isPresent()) return Optional.of(Migration.move(append(path, index), move.get()));
         }
         return Optional.empty();
     }
@@ -248,129 +243,6 @@ final class PacketMigrationScanner {
                 .compile("^Ljava/util/(?:List|Collection)<L([^;<>]+);>;$")
                 .matcher(component.signature);
         return matcher.matches() ? matcher.group(1) : null;
-    }
-
-    private static boolean nestedFloatPairMoved(Classes baseline, Classes target, String root,
-                                                 List<String> floatNames) {
-        final ArrayDeque<String> pending = new ArrayDeque<>();
-        final Set<String> visited = new HashSet<>();
-        pending.add(root);
-        while (!pending.isEmpty()) {
-            final String owner = pending.removeFirst();
-            if (!visited.add(owner)) continue;
-            final ClassNode before = baseline.readIfPresent(owner);
-            final ClassNode after = target.readIfPresent(owner);
-            if (before == null || after == null) continue;
-            if (manualFloatPairRemoved(before, after, floatNames)) return true;
-            for (String referenced : referencedTypes(components(before))) {
-                if (!visited.contains(referenced) && baseline.readIfPresent(referenced) != null
-                        && target.readIfPresent(referenced) != null) pending.addLast(referenced);
-            }
-        }
-        return false;
-    }
-
-    private static boolean manualFloatPairRemoved(ClassNode before, ClassNode after, List<String> names) {
-        if (names.size() != 2 || names.getFirst().equals(names.getLast())) return false;
-        for (String name : names) {
-            if (before.fields.stream().noneMatch(field -> (field.access & Opcodes.ACC_STATIC) == 0
-                    && field.name.equals(name) && field.desc.equals("F"))) return false;
-            if (after.fields.stream().anyMatch(field -> (field.access & Opcodes.ACC_STATIC) == 0
-                    && field.name.equals(name))) return false;
-        }
-        if (!writesFloatFields(before, names)) return false;
-        return bufferCalls(before, "writeFloat") == bufferCalls(after, "writeFloat") + 2
-                && bufferCalls(before, "readFloat") == bufferCalls(after, "readFloat") + 2;
-    }
-
-    private static boolean writesFloatFields(ClassNode owner, List<String> names) {
-        final Set<String> written = new HashSet<>();
-        for (MethodNode method : owner.methods) {
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (!(instruction instanceof MethodInsnNode call) || !call.name.equals("writeFloat")
-                        || !call.owner.endsWith("FriendlyByteBuf")) continue;
-                final AbstractInsnNode value = previousReal(instruction);
-                if (value instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
-                        && field.owner.equals(owner.name) && field.desc.equals("F")) written.add(field.name);
-            }
-        }
-        return written.containsAll(names);
-    }
-
-    private static int bufferCalls(ClassNode owner, String name) {
-        int result = 0;
-        for (MethodNode method : owner.methods) {
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof MethodInsnNode call && call.name.equals(name)
-                        && call.owner.endsWith("FriendlyByteBuf")) result++;
-            }
-        }
-        return result;
-    }
-
-    private static Set<String> referencedTypes(List<RecordComponentNode> components) {
-        final Set<String> result = new HashSet<>();
-        final java.util.regex.Pattern type = java.util.regex.Pattern.compile("L([^;<]+)");
-        for (RecordComponentNode component : components) {
-            final String direct = objectType(component.descriptor);
-            if (direct != null) result.add(direct);
-            if (component.signature == null) continue;
-            final java.util.regex.Matcher matcher = type.matcher(component.signature);
-            while (matcher.find()) result.add(matcher.group(1));
-        }
-        return result;
-    }
-
-    private static Optional<Migration> reorderedBooleanEnum(Classes baseline, Classes target, ClassNode before, ClassNode after,
-                                                             List<RecordComponentNode> beforeComponents,
-                                                             List<RecordComponentNode> afterComponents,
-                                                             List<Integer> path) {
-        if (beforeComponents.size() != 3 || afterComponents.size() != 3
-                || objectType(beforeComponents.get(0).descriptor) == null
-                || !sameComponent(beforeComponents.get(0), afterComponents.get(0))
-                || !isStringContainer(beforeComponents.get(1))
-                || !isStringList(afterComponents.get(1))
-                || !beforeComponents.get(2).descriptor.equals("Z")) return Optional.empty();
-        final String enumOwner = objectType(afterComponents.get(2).descriptor);
-        if (enumOwner == null) return Optional.empty();
-        final ClassNode enumClass = target.readIfPresent(enumOwner);
-        if (enumClass == null || !isBinaryEnum(enumClass)
-                || !componentReferencesCodec(after, afterComponents.get(2), enumOwner, "STREAM_CODEC")) {
-            return Optional.empty();
-        }
-        final int fixedSize = fixedStringListSize(after);
-        if (fixedSize < 0 || !legacyBooleanStringPayload(before, fixedSize)) return Optional.empty();
-        final var ids = booleanIds(baseline, target, before, beforeComponents.get(2), after, afterComponents.get(2), enumClass);
-        if (ids == null) return Optional.empty();
-        return Optional.of(Migration.reorderedBooleanEnum(path, fixedSize, ids.falseId(), ids.trueId()));
-    }
-
-    private static Optional<Migration> linearPositionPath(Classes baseline, Classes target, ClassNode before,
-                                                           ClassNode after, List<RecordComponentNode> beforeComponents,
-                                                           List<RecordComponentNode> afterComponents,
-                                                           List<Integer> path) {
-        if (beforeComponents.size() != 3 || afterComponents.size() != 5
-                || !beforeComponents.get(0).descriptor.equals("I")
-                || !afterComponents.get(0).descriptor.equals("I")
-                || !beforeComponents.get(2).descriptor.equals("Z")
-                || !afterComponents.get(2).descriptor.equals("F")
-                || !afterComponents.get(3).descriptor.equals("F")
-                || !afterComponents.get(4).descriptor.equals("Z")) return Optional.empty();
-        final String nestedOwner = objectType(beforeComponents.get(1).descriptor);
-        final String unionOwner = objectType(afterComponents.get(1).descriptor);
-        if (nestedOwner == null || unionOwner == null) return Optional.empty();
-        final ClassNode nested = baseline.readIfPresent(nestedOwner);
-        final ClassNode union = target.readIfPresent(unionOwner);
-        if (nested == null || union == null || !componentReferencesCompositeCodec(before,
-                beforeComponents.get(1), nestedOwner, nested)) return Optional.empty();
-        final List<RecordComponentNode> values = components(nested);
-        if (values.size() != 4 || objectType(values.get(0).descriptor) == null
-                || !sameComponentType(values.get(0), values.get(1))
-                || !values.get(2).descriptor.equals("F") || !values.get(3).descriptor.equals("F")
-                || !callsDispatch(union)) return Optional.empty();
-        final Integer discriminator = linearVariantDiscriminator(target, union, values.get(0));
-        if (discriminator == null) return Optional.empty();
-        return Optional.of(Migration.linearPositionPath(path, discriminator));
     }
 
     private static Optional<Migration> appendedPrimitive(Classes baseline, Classes target, ClassNode before,
@@ -468,116 +340,6 @@ final class PacketMigrationScanner {
 
     private static boolean sameComponentType(RecordComponentNode left, RecordComponentNode right) {
         return left.descriptor.equals(right.descriptor) && Objects.equals(left.signature, right.signature);
-    }
-
-    private static boolean isStringContainer(RecordComponentNode component) {
-        return component.descriptor.equals("[Ljava/lang/String;") || isStringList(component);
-    }
-
-    private static boolean isStringList(RecordComponentNode component) {
-        return component.descriptor.equals("Ljava/util/List;")
-                && "Ljava/util/List<Ljava/lang/String;>;".equals(component.signature);
-    }
-
-    private static int fixedStringListSize(ClassNode owner) {
-        for (MethodNode method : owner.methods) {
-            if (!method.name.equals("<clinit>")) continue;
-            boolean stringCodec = false;
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof MethodInsnNode call && call.owner.equals(CODEC_OWNER)
-                        && call.name.equals("stringUtf8")) stringCodec = true;
-                if (stringCodec && instruction instanceof MethodInsnNode call && call.owner.equals(CODEC_OWNER)
-                        && call.name.equals("fixedSizeList")) return previousInteger(instruction);
-            }
-        }
-        return -1;
-    }
-
-    private static boolean legacyBooleanStringPayload(ClassNode owner, int size) {
-        int booleanReads = 0;
-        int booleanWrites = 0;
-        int stringReads = 0;
-        int stringWrites = 0;
-        for (MethodNode method : owner.methods) {
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (!(instruction instanceof MethodInsnNode call)) continue;
-                switch (call.name) {
-                    case "readBoolean" -> booleanReads++;
-                    case "writeBoolean" -> booleanWrites++;
-                    case "readUtf" -> stringReads++;
-                    case "writeUtf" -> stringWrites++;
-                    default -> {
-                    }
-                }
-            }
-        }
-        boolean fixedArray = false;
-        for (MethodNode method : owner.methods) {
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof TypeInsnNode type && instruction.getOpcode() == Opcodes.ANEWARRAY
-                        && type.desc.equals("java/lang/String")
-                        && Integer.valueOf(size).equals(integerConstant(previousReal(instruction)))) fixedArray = true;
-            }
-        }
-        return booleanReads == 1 && booleanWrites == 1 && stringReads == 1 && stringWrites == 1 && fixedArray;
-    }
-
-    private static boolean callsDispatch(ClassNode owner) {
-        for (MethodNode method : owner.methods) {
-            if (!method.name.equals("<clinit>")) continue;
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof MethodInsnNode call
-                        && call.owner.equals("net/minecraft/network/codec/StreamCodec")
-                        && call.name.equals("dispatch")) return true;
-            }
-        }
-        return false;
-    }
-
-    private static Integer linearVariantDiscriminator(Classes target, ClassNode union,
-                                                       RecordComponentNode positionComponent) {
-        String enumOwner = null;
-        for (MethodNode method : union.methods) {
-            if (!method.name.equals("<clinit>")) continue;
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
-                        && field.desc.equals(STREAM_CODEC_DESCRIPTOR)) {
-                    final ClassNode candidate = target.readIfPresent(field.owner);
-                    if (candidate != null && isEnum(candidate)) enumOwner = field.owner;
-                }
-            }
-        }
-        if (enumOwner == null) return null;
-        final ClassNode enumClass = target.read(enumOwner);
-        if (!usesIdMapper(enumClass)) return null;
-        final MethodNode clinit = enumClass.methods.stream().filter(method -> method.name.equals("<clinit>"))
-                .findFirst().orElse(null);
-        if (clinit == null) return null;
-        for (AbstractInsnNode instruction : clinit.instructions) {
-            if (!(instruction instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL
-                    || !call.owner.equals(enumOwner) || !call.name.equals("<init>")) continue;
-            final AbstractInsnNode codec = previousReal(instruction);
-            final AbstractInsnNode ordinal = codec == null ? null : previousReal(codec);
-            if (!(codec instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
-                    || !field.desc.equals(STREAM_CODEC_DESCRIPTOR)) continue;
-            final ClassNode variant = target.readIfPresent(field.owner);
-            final List<RecordComponentNode> variantComponents = variant == null ? List.of() : components(variant);
-            if (variantComponents.size() != 1 || !sameComponentType(variantComponents.getFirst(), positionComponent)) {
-                continue;
-            }
-            return integerConstant(ordinal);
-        }
-        return null;
-    }
-
-    static boolean usesIdMapper(ClassNode owner) {
-        for (MethodNode method : owner.methods) {
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction instanceof MethodInsnNode call && call.owner.equals(CODEC_OWNER)
-                        && call.name.equals("idMapper")) return true;
-            }
-        }
-        return false;
     }
 
     private static boolean callsConstructor(MethodNode method, String owner, String descriptor) {
@@ -1334,6 +1096,9 @@ final class PacketMigrationScanner {
             } else if (opcode == Opcodes.DUP) {
                 if (stack.isEmpty()) throw unsupportedEnumInitializer(enumClass, instruction);
                 stack.push(stack.peek());
+            } else if (instruction instanceof FieldInsnNode field && opcode == Opcodes.GETSTATIC
+                    && field.desc.equals(STREAM_CODEC_DESCRIPTOR)) {
+                stack.push(Value.OTHER);
             } else if (instruction instanceof LdcInsnNode constant) {
                 stack.push(constant.cst);
             } else if (instruction instanceof IntInsnNode integer) {
@@ -1465,20 +1230,33 @@ final class PacketMigrationScanner {
 
     enum Kind {
         CODEC_REWRITE,
-        REORDERED_BOOLEAN_ENUM,
-        LINEAR_POSITION_PATH,
         WIRE_SUFFIX,
-        MOVED_NESTED_FLOATS,
-        WIRE_PROJECTION
+        WIRE_PROJECTION,
+        WIRE_DISPATCH,
+        WIRE_FIELD_MOVE
     }
 
     record Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
                      Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
-                     boolean defaultValue, int falseId, int trueId, WireMigration wire, List<WireMigration.Binding> suffix, CodecChange codec) {
+                     boolean defaultValue, int falseId, int trueId, WireMigration wire, List<WireMigration.Binding> suffix, CodecChange codec, WireDispatch.Plan dispatch, WireFieldMove move) {
         Migration {
             path = List.copyOf(path);
             ids = Map.copyOf(ids);
             suffix = suffix == null ? List.of() : List.copyOf(suffix);
+        }
+
+        Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
+                  Map<String, Integer> ids, String targetEnum, int fixedSize, int discriminator,
+                  boolean defaultValue, int falseId, int trueId, WireMigration wire, List<WireMigration.Binding> suffix, CodecChange codec) {
+            this(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue, falseId, trueId, wire, suffix, codec, null, null);
+        }
+
+        static Migration move(List<Integer> path, WireFieldMove plan) {
+            return new Migration(null, Kind.WIRE_FIELD_MOVE, path, Map.of(), "", -1, -1, false, -1, -1, null, List.of(), null, null, plan);
+        }
+
+        static Migration dispatch(List<Integer> path, WireDispatch.Plan plan) {
+            return new Migration(null, Kind.WIRE_DISPATCH, path, Map.of(), "", -1, -1, false, -1, -1, null, List.of(), null, plan, null);
         }
 
         Migration(PacketUpdater.RetainedPacket packet, Kind kind, List<Integer> path,
@@ -1505,27 +1283,13 @@ final class PacketMigrationScanner {
             return new Migration(null, Kind.CODEC_REWRITE, path, codec.enumIds(), owner, -1, -1, false, -1, -1, null, List.of(), codec);
         }
 
-        static Migration reorderedBooleanEnum(List<Integer> path, int fixedSize, int falseId, int trueId) {
-            return new Migration(null, Kind.REORDERED_BOOLEAN_ENUM, path, Map.of(), "", fixedSize, -1, false,
-                    falseId, trueId);
-        }
-
-        static Migration linearPositionPath(List<Integer> path, int discriminator) {
-            return new Migration(null, Kind.LINEAR_POSITION_PATH, path, Map.of(), "", -1, discriminator, false,
-                    -1, -1);
-        }
-
         static Migration suffix(List<Integer> path, List<WireMigration.Binding> fields) {
             return new Migration(null, Kind.WIRE_SUFFIX, path, Map.of(), "", -1, -1, false, -1, -1, null, fields, null);
         }
 
-        static Migration movedNestedFloats(List<Integer> path) {
-            return new Migration(null, Kind.MOVED_NESTED_FLOATS, path, Map.of(), "", -1, -1, false, -1, -1);
-        }
-
         Migration withPacket(PacketUpdater.RetainedPacket packet) {
             return new Migration(packet, kind, path, ids, targetEnum, fixedSize, discriminator, defaultValue,
-                    falseId, trueId, wire, suffix, codec);
+                    falseId, trueId, wire, suffix, codec, dispatch, move);
         }
     }
 

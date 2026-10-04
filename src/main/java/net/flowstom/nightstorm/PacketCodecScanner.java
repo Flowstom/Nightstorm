@@ -59,9 +59,34 @@ final class PacketCodecScanner {
         } else result = knownCodec(codec.owner(), codec.name());
         for (String operation : codec.operations()) {
             if (operation.equals("list")) result = result.list();
+            else if (operation.equals("nonempty") && result.supported() && result.javaType().startsWith("java.util.List<")) {
+                result = new CodecType(result.javaType(), nonemptyExpression(result.networkType(), result.javaType()),
+                        result.source(), result.vanillaDescriptor(), true);
+            } else if (operation.startsWith("limit:") && result.supported() && result.javaType().equals("String")) {
+                int limit = Integer.parseInt(operation.substring(6));
+                String check = "{ if (value.length() > " + limit + " || value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > "
+                        + ((long) limit * 3) + "L) throw new IllegalArgumentException(\"String exceeds codec limit\"); return value; }";
+                result = new CodecType(result.javaType(), result.networkType() + ".transform((String value) -> " + check
+                        + ", (String value) -> " + check + ")", result.source(), result.vanillaDescriptor(), true);
+            } else if (operation.startsWith("fixed:") && result.supported()) {
+                int count = Integer.parseInt(operation.substring(6));
+                String element = CodecType.boxed(result.javaType());
+                String list = "java.util.List<" + element + ">";
+                String expression = "new NetworkBuffer.Type<" + list + ">() { @Override public void write(NetworkBuffer fixedBuffer, " + list
+                        + " fixedValues) { if (fixedValues.size() != " + count + ") throw new IllegalArgumentException(\"Fixed list length\");"
+                        + " for (var fixedElement : fixedValues) fixedBuffer.write(" + result.networkType() + ", fixedElement); } @Override public " + list
+                        + " read(NetworkBuffer fixedBuffer) { var fixedResult = new java.util.ArrayList<" + element + ">(" + count
+                        + "); for (int fixedIndex = 0; fixedIndex < " + count + "; fixedIndex++) fixedResult.add(fixedBuffer.read(" + result.networkType() + ")); return java.util.List.copyOf(fixedResult); } }";
+                result = new CodecType(list, expression, result.source(), "Ljava/util/List;", true);
+            }
             else return unsupported(codec.owner(), codec.name());
         }
         return result;
+    }
+
+    static String nonemptyExpression(String codec, String type) {
+        String check = "(" + type + " listValue) -> { if (listValue.isEmpty()) throw new IllegalArgumentException(\"Empty mapped collection\"); return listValue; }";
+        return codec + ".transform(" + check + ", " + check + ")";
     }
 
     private static CodecType knownCodec(String owner, String fieldName) {

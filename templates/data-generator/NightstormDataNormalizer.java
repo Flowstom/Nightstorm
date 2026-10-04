@@ -24,7 +24,9 @@ public final class NightstormDataNormalizer {
         if (source == null || source.isBlank()) {
             throw new IllegalStateException("NIGHTSTORM_MINSTOM_SOURCE is required");
         }
-        normalize(output, Path.of(source).resolve(".nightstorm/data-shapes.json"));
+        Path metadata = Path.of(source).resolve(".nightstorm");
+        normalize(output, metadata.resolve("data-shapes.json"));
+        DataMigration.migrate(output, metadata.resolve("data-migrations.json"), metadata.resolve("data-baseline.json"));
     }
 
     public static void normalize(Path output, Path shapes) throws IOException {
@@ -93,34 +95,10 @@ public final class NightstormDataNormalizer {
             }
         }
 
-        if (object.has("palette_id") && !object.has("asset_name") && object.get("palette_id").isJsonPrimitive()) {
-            String palette = object.remove("palette_id").getAsString();
-            object.addProperty("asset_name", palette.substring(palette.lastIndexOf('/') + 1));
-            changed++;
-        }
-        if (object.has("destroy_on_use") && !object.has("explodes")) {
-            object.add("explodes", object.remove("destroy_on_use"));
-            changed++;
-        }
-
         for (String key : List.copyOf(object.keySet())) {
-            JsonElement value = object.get(key);
-            if (isAppendShape(value)) {
-                object.add(key, value.getAsJsonObject().get("argument"));
-                changed++;
-            } else {
-                changed += normalize(value, components, attributes, layouts);
-            }
+            changed += normalize(object.get(key), components, attributes, layouts);
         }
         return changed;
-    }
-
-    private static boolean isAppendShape(JsonElement value) {
-        if (!value.isJsonObject()) return false;
-        JsonObject object = value.getAsJsonObject();
-        return object.size() == 2 && object.has("modifier") && object.has("argument")
-                && object.get("modifier").isJsonPrimitive()
-                && "append".equals(object.get("modifier").getAsString());
     }
 
     private static JsonArray listValue(JsonElement value, JsonObject layout) {

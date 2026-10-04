@@ -39,10 +39,29 @@ final class RetainedPacketMigrator {
     static void apply(Path sourceRoot, List<PacketMigrationScanner.Migration> migrations) throws IOException {
         if (migrations.isEmpty()) return;
         final var sources = new SourceIndex(sourceRoot);
+        Path structuralPath = sourceRoot.resolve(".nightstorm/structural-adapters.json");
+        Map<String, StructuralAdapter> structural = Files.exists(structuralPath) ? Json.MAPPER.readValue(structuralPath.toFile(),
+                new com.fasterxml.jackson.core.type.TypeReference<LinkedHashMap<String, StructuralAdapter>>() { }) : new LinkedHashMap<>();
+        for (var adapter : structural.values()) for (var file : adapter.files().entrySet()) {
+            if (!sourceHash(sourceRoot.resolve(file.getKey())).equals(file.getValue()))
+                throw new IllegalStateException("Saved structural adapter differs from source edits: " + file.getKey());
+        }
+        Set<String> completedStructural = new LinkedHashSet<>();
         final Map<String, WireMigration> wirePlans = readWirePlans(sourceRoot);
         sources.existingWireAdapters.putAll(wirePlans);
         final Map<SerializerSlot, PlannedEdit> edits = new LinkedHashMap<>();
         for (PacketMigrationScanner.Migration requested : migrations) {
+            if (requested.dispatch() != null || requested.move() != null) {
+                String key = wireKey(requested.packet(), requested.path());
+                var previous = structural.get(key);
+                if (previous != null) {
+                    for (var file : previous.files().entrySet()) if (!sourceHash(sourceRoot.resolve(file.getKey())).equals(file.getValue()))
+                        throw new IllegalStateException("Saved structural adapter differs from source edits: " + file.getKey());
+                    if (!previous.migration().equals(requested)) throw new IllegalStateException("Structural adapter changed; a new API projection is required");
+                    continue;
+                }
+                completedStructural.add(key);
+            }
             PacketMigrationScanner.Migration resolvedMigration = requested;
             if (requested.wire() != null) {
                 final String key = wireKey(requested.packet(), requested.path());
@@ -53,8 +72,8 @@ final class RetainedPacketMigrator {
             }
             final PacketMigrationScanner.Migration migration = resolvedMigration;
             final ResolvedType packetType = sources.resolveUnique(migration.packet().className());
-            if (migration.kind() == PacketMigrationScanner.Kind.MOVED_NESTED_FLOATS) {
-                planMovedNestedFloats(sources, edits, packetType, migration);
+            if (migration.kind() == PacketMigrationScanner.Kind.WIRE_FIELD_MOVE) {
+                planFieldMove(sources, edits, packetType, migration);
                 continue;
             }
             if (migration.kind() != PacketMigrationScanner.Kind.CODEC_REWRITE) {
@@ -127,7 +146,28 @@ final class RetainedPacketMigrator {
             edit.removals().forEach(Node::remove);
         }
         sources.writeChanged();
+        for (var requested : migrations) {
+            String key = wireKey(requested.packet(), requested.path());
+            if (!completedStructural.contains(key)) continue;
+            Map<String, String> files = new LinkedHashMap<>();
+            for (var file : sources.parsed.keySet()) files.put(sourceRoot.relativize(file).toString(), sourceHash(file));
+            structural.put(key, new StructuralAdapter(requested, files));
+        }
+        if (!structural.isEmpty()) {
+            for (var entry : List.copyOf(structural.entrySet())) {
+                Map<String,String> hashes=new LinkedHashMap<>();
+                for (String file : entry.getValue().files().keySet()) hashes.put(file,sourceHash(sourceRoot.resolve(file)));
+                structural.put(entry.getKey(),new StructuralAdapter(entry.getValue().migration(), hashes));
+            }
+            Json.write(structuralPath, structural);
+        }
         if (!wirePlans.isEmpty()) Json.write(sourceRoot.resolve(".nightstorm/wire-adapters.json"), wirePlans);
+    }
+
+    private record StructuralAdapter(PacketMigrationScanner.Migration migration, Map<String, String> files) { }
+    private static String sourceHash(Path path) throws IOException {
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))); }
+        catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 
     static Map<String, WireMigration> readWirePlans(Path sourceRoot) throws IOException {
@@ -175,9 +215,9 @@ final class RetainedPacketMigrator {
             return;
         }
         final Expression current = resolved.expression();
+        sources.shortenJdkNames(packetType.source().unit(), current);
         final Expression replacement = switch (migration.kind()) {
-            case REORDERED_BOOLEAN_ENUM -> reorderedBooleanSerializer(sources, packetType, current, migration);
-            case LINEAR_POSITION_PATH -> linearPositionSerializer(sources, packetType, current, migration);
+            case WIRE_DISPATCH -> dispatchSerializer(sources, packetType, current, migration.dispatch());
             case WIRE_PROJECTION -> {
                 final String key = wireKey(migration.packet(), migration.path());
                 final WireMigration previous = sources.existingWireAdapters.get(key);
@@ -194,10 +234,10 @@ final class RetainedPacketMigrator {
                 yield wireSerializer(sources, packetType, plan);
             }
             case WIRE_SUFFIX -> suffixSerializer(sources, packetType, current, migration.suffix());
-            case CODEC_REWRITE, MOVED_NESTED_FLOATS ->
+            case CODEC_REWRITE, WIRE_FIELD_MOVE ->
                     throw new IllegalStateException("Unexpected leaf migration");
         };
-        final List<Node> removals = migration.kind() == PacketMigrationScanner.Kind.REORDERED_BOOLEAN_ENUM
+        final List<Node> removals = migration.kind() == PacketMigrationScanner.Kind.WIRE_PROJECTION
                 ? obsoletePrivateHelpers(packetType, current) : List.of();
         final PlannedEdit edit = new PlannedEdit(current, replacement, semanticKey(migration), removals);
         final PlannedEdit previous = edits.putIfAbsent(slot, edit);
@@ -294,58 +334,131 @@ final class RetainedPacketMigrator {
         return null;
     }
 
-    private static void planMovedNestedFloats(SourceIndex sources, Map<SerializerSlot, PlannedEdit> edits,
-                                               ResolvedType packetType,
-                                               PacketMigrationScanner.Migration migration) {
-        if (migration.path().size() != 1) {
-            throw new IllegalStateException("Moved nested float migration requires one collection component path");
+    private record SourcePath(List<ResolvedType> types, List<Integer> indices) { }
+
+    private static void planFieldMove(SourceIndex sources, Map<SerializerSlot, PlannedEdit> edits,
+                                       ResolvedType packetType, PacketMigrationScanner.Migration migration) {
+        if (migration.path().size() != 1) throw new IllegalStateException("Nested field move requires a direct collection component");
+        var mappingType = sources.recordListElementType(packetType, migration.path().getFirst());
+        var mapping = requireRecord(mappingType);
+        var mappingSerializer = sources.field(mappingType, "SERIALIZER");
+        if (mappingSerializer.expression().toString().contains("nestedFieldDelegate")) return;
+        var fields = migration.move().fields();
+        List<SourcePath> paths = new ArrayList<>();
+        findMovedSource(sources, mappingType, List.of(mappingType), List.of(), new LinkedHashSet<>(), fields, paths);
+        if (paths.size() != 1 || paths.getFirst().indices().isEmpty()) throw new IllegalStateException("Expected one source path for moved fields, found " + paths.size());
+        var path = paths.getFirst(); var leafType = path.types().getLast(); var leaf = requireRecord(leafType);
+        var leafSerializer = sources.field(leafType, "SERIALIZER");
+        Map<Integer, String> placeholders = new LinkedHashMap<>();
+        for (var field : fields) placeholders.put(sourceComponent(leaf, field.name()), field.defaultValue());
+        var leafReplacement = serializerWithoutFields(sources, leafType, leaf, leafSerializer.expression(), fields, placeholders);
+        int arity = mapping.getParameters().size();
+        var oldParameters = mapping.getParameters().stream().map(Parameter::clone).toList();
+        if (!mapping.getConstructors().isEmpty() || !mapping.getCompactConstructors().isEmpty()) throw new IllegalStateException("Moved-field source API has custom constructors");
+        for (var field : fields) if (oldParameters.stream().anyMatch(p -> p.getNameAsString().equals(field.name()))) throw new IllegalStateException("Moved-field source name collision " + field.name());
+        // Methods rebuilding this value must retain the new independently stored fields.
+        for (var method : mapping.getMethods()) for (var creation : method.findAll(ObjectCreationExpr.class)) {
+            if (creation.getType().getNameAsString().equals(mapping.getNameAsString()) && creation.getArguments().size()==arity)
+                fields.forEach(f -> creation.addArgument("this." + f.name()));
         }
-        final ResolvedType mappingType = sources.recordListElementType(packetType, migration.path().getFirst());
-        final RecordDeclaration mapping = requireRecord(mappingType);
-        if (mapping.getParameters().size() != 2) {
-            throw new IllegalStateException("Positioned collection element must be a two-component source record");
+        for (var field : fields) mapping.addParameter(field.javaType(), field.name());
+        // Use the legacy arguments directly, without creating a temporary value before this(...).
+        String legacyExpression = oldParameters.get(path.indices().getFirst()).getNameAsString();
+        for (int depth=1; depth<path.indices().size();depth++) legacyExpression += "." + requireRecord(path.types().get(depth)).getParameter(path.indices().get(depth)).getNameAsString()+"()";
+        List<String> legacyNulls = new ArrayList<>(); String cursor = oldParameters.get(path.indices().getFirst()).getNameAsString();
+        for (int depth=0; depth<path.indices().size();depth++) {
+            var parent = requireRecord(path.types().get(depth));
+            if (SourceIndex.isNullable(parent.getParameter(path.indices().get(depth)))) legacyNulls.add(cursor+" == null");
+            if (depth+1<path.indices().size()) cursor += "."+requireRecord(path.types().get(depth+1)).getParameter(path.indices().get(depth+1)).getNameAsString()+"()";
         }
-        final int nestedIndex = 1;
-        final ResolvedType nestedType = sources.recordComponentType(mappingType, nestedIndex, false);
-        final RecordDeclaration nested = requireRecord(nestedType);
-        int positionedIndex = -1;
-        ResolvedType positionedType = null;
-        for (int index = 0; index < nested.getParameters().size(); index++) {
-            final Parameter parameter = nested.getParameter(index);
-            if (!(parameter.getType() instanceof ClassOrInterfaceType)) continue;
-            final ResolvedType candidate;
-            try {
-                candidate = sources.recordComponentType(nestedType, index, false);
-            } catch (IllegalStateException ignored) {
-                continue;
+        List<String> compatibilityArguments = new ArrayList<>(oldParameters.stream().map(Parameter::getNameAsString).toList());
+        for (var field : fields) compatibilityArguments.add(legacyNulls.isEmpty() ? legacyExpression+"."+field.name()+"()"
+                : "("+String.join(" || ",legacyNulls)+") ? "+field.defaultValue()+" : "+legacyExpression+"."+field.name()+"()");
+        var compatibility = new com.github.javaparser.ast.body.ConstructorDeclaration();
+        compatibility.setName(mapping.getNameAsString()).setPublic(true).setParameters(new com.github.javaparser.ast.NodeList<>(oldParameters));
+        compatibility.setBody(sources.parser.parseBlock("{ this("+String.join(", ",compatibilityArguments)+"); }").getResult().orElseThrow());
+        mapping.addMember(compatibility);
+        StringBuilder writes = new StringBuilder(), reads = new StringBuilder(); Map<Integer,String> movedValues = new LinkedHashMap<>();
+        for (int n=0;n<fields.size();n++) {
+            var field=fields.get(n); String variable="moved"+n;
+            writes.append("buffer.write(").append(field.codec()).append(", value.").append(field.name()).append("()); ");
+            reads.append(field.javaType()).append(' ').append(variable).append(" = buffer.read(").append(field.codec()).append("); ");
+            movedValues.put(sourceComponent(leaf,field.name()),variable);
+        }
+        String rebuilt = constructor(leaf.getNameAsString(), leaf, sourcePath(path,"value",path.indices().size()), movedValues);
+        for (int depth=path.indices().size()-1;depth>=0;depth--) {
+            String child=sourcePath(path,"value",depth+1);
+            if (SourceIndex.isNullable(requireRecord(path.types().get(depth)).getParameter(path.indices().get(depth)))) rebuilt = child+" == null ? null : "+rebuilt;
+            var parent=requireRecord(path.types().get(depth));
+            String receiver=depth==0?"value":sourcePath(path,"value",depth);
+            rebuilt=constructor(parent.getNameAsString(),parent,receiver,Map.of(path.indices().get(depth),rebuilt));
+        }
+        // Replace the reconstructed root's appended arguments with the actual wire values.
+        var rootConstructor = sources.parseExpression(rebuilt,"moved-field reconstruction").asObjectCreationExpr();
+        for(int n=0;n<fields.size();n++) rootConstructor.setArgument(arity+n,sources.parseExpression("moved"+n,"moved field"));
+        String type=mapping.getNameAsString();
+        var replacement=sources.parseExpression("new NetworkBuffer.Type<"+type+">() { private final NetworkBuffer.Type<"+type+"> nestedFieldDelegate = "+mappingSerializer.expression()
+                +"; @Override public void write(NetworkBuffer buffer, "+type+" value) { nestedFieldDelegate.write(buffer,value); "+writes
+                +" } @Override public "+type+" read(NetworkBuffer buffer) { var value=nestedFieldDelegate.read(buffer); "+reads+"return "+rootConstructor+"; } }","moved-field serializer");
+        addEdit(edits,mappingSerializer,replacement,semanticKey(migration));
+        addEdit(edits,leafSerializer,leafReplacement,semanticKey(migration));
+    }
+
+    private static void findMovedSource(SourceIndex sources, ResolvedType owner, List<ResolvedType> types, List<Integer> indices,
+                                         Set<String> active, List<WireFieldMove.Moved> fields, List<SourcePath> matches) {
+        if (!active.add(owner.qualifiedName()) || types.size()>16) return;
+        try {
+            var record=requireRecord(owner);
+            if (fields.stream().allMatch(f -> record.getParameters().stream().anyMatch(p -> p.getNameAsString().equals(f.name()) && p.getType().asString().equals(f.javaType()))))
+                matches.add(new SourcePath(List.copyOf(types),List.copyOf(indices)));
+            for(int n=0;n<record.getParameters().size();n++) {
+                ResolvedType child;
+                try { child=sources.recordComponentType(owner,n,false); } catch(IllegalStateException unsupported) { continue; }
+                if (!(child.declaration() instanceof RecordDeclaration)) continue;
+                var chain=new ArrayList<>(types);chain.add(child);var path=new ArrayList<>(indices);path.add(n);
+                findMovedSource(sources,child,chain,path,active,fields,matches);
             }
-            if (!(candidate.declaration() instanceof RecordDeclaration record) || record.getParameters().size() < 2) {
-                continue;
-            }
-            final int firstFloat = record.getParameters().size() - 2;
-            if (isFloat(record.getParameter(firstFloat)) && isFloat(record.getParameter(firstFloat + 1))) {
-                if (positionedType != null) {
-                    throw new IllegalStateException("Nested source record has multiple trailing float-pair components");
-                }
-                positionedIndex = index;
-                positionedType = candidate;
-            }
+        } finally { active.remove(owner.qualifiedName()); }
+    }
+    private static String sourcePath(SourcePath path,String root,int through) {
+        String result=root;
+        for(int n=0;n<through;n++) result+="."+requireRecord(path.types().get(n)).getParameter(path.indices().get(n)).getNameAsString()+"()";
+        return result;
+    }
+    private static Expression serializerWithoutFields(SourceIndex sources, ResolvedType owner, RecordDeclaration record,
+                                                       Expression current, List<WireFieldMove.Moved> fields, Map<Integer,String> placeholders) {
+        var replacement=current.clone().asObjectCreationExpr();
+        var writers=replacement.getAnonymousClassBody().orElseThrow().stream().filter(com.github.javaparser.ast.body.MethodDeclaration.class::isInstance)
+                .map(com.github.javaparser.ast.body.MethodDeclaration.class::cast).filter(m -> m.getNameAsString().equals("write")).toList();
+        var readers=replacement.getAnonymousClassBody().orElseThrow().stream().filter(com.github.javaparser.ast.body.MethodDeclaration.class::isInstance)
+                .map(com.github.javaparser.ast.body.MethodDeclaration.class::cast).filter(m -> m.getNameAsString().equals("read")).toList();
+        if(writers.size()!=1 || readers.size()!=1)throw new IllegalStateException("Moved fields require one source reader and writer");
+        var writer=writers.getFirst();String buffer=writer.getParameter(0).getNameAsString(),value=writer.getParameter(1).getNameAsString();
+        var statements=writer.getBody().orElseThrow().getStatements();
+        if(statements.size()<fields.size())throw new IllegalStateException("Missing moved-field source writes");
+        for(int n=fields.size()-1;n>=0;n--) {
+            var field=fields.get(n);var statement=statements.getLast().orElseThrow();
+            if(!statement.isExpressionStmt() || !(statement.asExpressionStmt().getExpression() instanceof MethodCallExpr call)
+                    || !call.getNameAsString().equals("write") || !call.getScope().map(Object::toString).orElse("").equals(buffer)
+                    || call.getArguments().size()!=2 || !normalizedCodec(call.getArgument(0).toString()).equals(normalizedCodec(field.codec()))
+                    || !isAccessor(call.getArgument(1),value,field.name()))throw new IllegalStateException("Moved fields do not match source writer suffix");
+            statements.removeLast();
         }
-        if (positionedType == null) {
-            throw new IllegalStateException("Unable to locate nested source record containing the moved float pair");
+        var reader=readers.getFirst();String readBuffer=reader.getParameter(0).getNameAsString();
+        var constructions=reader.findAll(ObjectCreationExpr.class).stream().filter(c -> c.getType().getNameAsString().equals(record.getNameAsString()) && c.getArguments().size()==record.getParameters().size()).toList();
+        if(constructions.size()!=1)throw new IllegalStateException("Missing moved-field source reader construction");
+        var construction=constructions.getFirst();
+        for(var field:fields) {
+            int index=sourceComponent(record,field.name());var argument=construction.getArgument(index);
+            if(!(argument instanceof NameExpr variable))throw new IllegalStateException("Moved source field needs a direct read binding");
+            var declarations=reader.findAll(VariableDeclarator.class).stream().filter(v -> v.getNameAsString().equals(variable.getNameAsString())).toList();
+            if(declarations.size()!=1 || !(declarations.getFirst().getInitializer().orElse(null) instanceof MethodCallExpr call)
+                    || !call.getNameAsString().equals("read") || !call.getScope().map(Object::toString).orElse("").equals(readBuffer)
+                    || call.getArguments().size()!=1 || !normalizedCodec(call.getArgument(0).toString()).equals(normalizedCodec(field.codec())))throw new IllegalStateException("Moved source field codec differs");
+            declarations.getFirst().findAncestor(com.github.javaparser.ast.stmt.ExpressionStmt.class).orElseThrow().remove();
+            construction.setArgument(index,sources.parseExpression(placeholders.get(index),"baseline field initialization"));
         }
-        final RecordDeclaration positioned = requireRecord(positionedType);
-        final int firstFloat = positioned.getParameters().size() - 2;
-        final ResolvedExpression mappingSerializer = sources.field(mappingType, "SERIALIZER");
-        final ResolvedExpression positionedSerializer = sources.field(positionedType, "SERIALIZER");
-        final Expression mappingReplacement = positionedCollectionSerializer(sources, mappingType, mapping,
-                nestedType, nested, nestedIndex, positionedType, positioned, positionedIndex, firstFloat,
-                mappingSerializer.expression());
-        final Expression positionedReplacement = serializerWithoutTrailingFloats(sources, positionedType,
-                positioned, positionedSerializer.expression(), firstFloat);
-        final String semantic = semanticKey(migration);
-        addEdit(edits, mappingSerializer, mappingReplacement, semantic);
-        addEdit(edits, positionedSerializer, positionedReplacement, semantic);
+        return sources.parseExpression(replacement.toString(),"nested codec without moved suffix");
     }
 
     private static void addEdit(Map<SerializerSlot, PlannedEdit> edits, ResolvedExpression resolved,
@@ -360,108 +473,9 @@ final class RetainedPacketMigrator {
         }
     }
 
-    private static Expression positionedCollectionSerializer(SourceIndex sources, ResolvedType mappingType,
-                                                               RecordDeclaration mapping, ResolvedType nestedType,
-                                                               RecordDeclaration nested, int nestedIndex,
-                                                               ResolvedType positionedType,
-                                                               RecordDeclaration positioned, int positionedIndex,
-                                                               int firstFloat, Expression current) {
-        if (current.toString().contains("positionCompatibilityDelegate")) return current.clone();
-        final String mappingName = mapping.getNameAsString();
-        final String nestedName = nested.getNameAsString();
-        final String positionedName = positioned.getNameAsString();
-        final String nestedComponent = mapping.getParameter(nestedIndex).getNameAsString();
-        final String positionedComponent = nested.getParameter(positionedIndex).getNameAsString();
-        final String firstName = positioned.getParameter(firstFloat).getNameAsString();
-        final String secondName = positioned.getParameter(firstFloat + 1).getNameAsString();
-        final String adjustedPosition = constructor(positionedName, positioned, "positionedValue",
-                Map.of(firstFloat, "position0", firstFloat + 1, "position1"));
-        final String adjustedNested = constructor(nestedName, nested, "nestedValue",
-                Map.of(positionedIndex, "adjustedPosition"));
-        final String adjustedMapping = constructor(mappingName, mapping, "value",
-                Map.of(nestedIndex, "adjustedNested"));
-        return sources.parseExpression("""
-                new NetworkBuffer.Type<%s>() {
-                    private final NetworkBuffer.Type<%s> positionCompatibilityDelegate = %s;
-
-                    @Override
-                    public void write(NetworkBuffer buffer, %s value) {
-                        positionCompatibilityDelegate.write(buffer, value);
-                        var positionedValue = value.%s().%s();
-                        buffer.write(NetworkBuffer.FLOAT, positionedValue == null ? 0.0f : positionedValue.%s());
-                        buffer.write(NetworkBuffer.FLOAT, positionedValue == null ? 0.0f : positionedValue.%s());
-                    }
-
-                    @Override
-                    public %s read(NetworkBuffer buffer) {
-                        var value = positionCompatibilityDelegate.read(buffer);
-                        float position0 = buffer.read(NetworkBuffer.FLOAT);
-                        float position1 = buffer.read(NetworkBuffer.FLOAT);
-                        var nestedValue = value.%s();
-                        var positionedValue = nestedValue.%s();
-                        if (positionedValue == null) return value;
-                        var adjustedPosition = %s;
-                        var adjustedNested = %s;
-                        return %s;
-                    }
-                }
-                """.formatted(mappingName, mappingName, current, mappingName, nestedComponent,
-                positionedComponent, firstName, secondName, mappingName, nestedComponent, positionedComponent,
-                adjustedPosition, adjustedNested, adjustedMapping), "positioned collection serializer");
-    }
-
-    private static Expression serializerWithoutTrailingFloats(SourceIndex sources, ResolvedType owner,
-                                                               RecordDeclaration record, Expression current,
-                                                               int firstFloat) {
-        final ObjectCreationExpr replacement = current.clone().toObjectCreationExpr()
-                .orElseThrow(() -> new IllegalStateException("Moved float pair requires a custom serializer in "
-                        + owner.qualifiedName()));
-        final Set<String> names = Set.of(record.getParameter(firstFloat).getNameAsString(),
-                record.getParameter(firstFloat + 1).getNameAsString());
-        final List<MethodCallExpr> writes = replacement.findAll(MethodCallExpr.class).stream()
-                .filter(call -> call.getNameAsString().equals("write") && call.getArguments().size() == 2)
-                .filter(call -> terminalName(call.getArgument(0)).equals("FLOAT"))
-                .filter(call -> names.stream().anyMatch(name -> isAccessor(call.getArgument(1), "value", name)))
-                .toList();
-        writes.forEach(call -> call.findAncestor(com.github.javaparser.ast.stmt.ExpressionStmt.class)
-                .orElseThrow(() -> new IllegalStateException("FLOAT write is not a statement in "
-                        + owner.qualifiedName())).remove());
-        final List<VariableDeclarator> reads = replacement.findAll(VariableDeclarator.class).stream()
-                .filter(variable -> names.contains(variable.getNameAsString()))
-                .filter(variable -> variable.getInitializer().flatMap(Expression::toMethodCallExpr)
-                        .filter(call -> call.getNameAsString().equals("read") && call.getArguments().size() == 1)
-                        .filter(call -> terminalName(call.getArgument(0)).equals("FLOAT")).isPresent())
-                .toList();
-        reads.forEach(variable -> variable.findAncestor(com.github.javaparser.ast.stmt.ExpressionStmt.class)
-                .orElseThrow(() -> new IllegalStateException("FLOAT read is not a statement in "
-                        + owner.qualifiedName())).remove());
-        final List<ObjectCreationExpr> constructors = replacement.findAll(ObjectCreationExpr.class).stream()
-                .filter(creation -> creation.getType().getNameAsString().equals(record.getNameAsString()))
-                .filter(creation -> creation.getArguments().size() == record.getParameters().size()).toList();
-        if (constructors.size() != 1) {
-            throw new IllegalStateException("Unable to locate positioned value construction in " + owner.qualifiedName());
-        }
-        final ObjectCreationExpr constructor = constructors.getFirst();
-        final boolean alreadyMigrated = writes.isEmpty() && reads.isEmpty()
-                && constructor.getArgument(firstFloat).toString().matches("0(?:\\.0)?[fF]?")
-                && constructor.getArgument(firstFloat + 1).toString().matches("0(?:\\.0)?[fF]?");
-        if (!alreadyMigrated && (writes.size() != 2 || reads.size() != 2)) {
-            throw new IllegalStateException("Expected two trailing FLOAT reads and writes in " + owner.qualifiedName());
-        }
-        constructor.setArgument(firstFloat, sources.parseExpression("0.0f", "position placeholder"));
-        constructor.setArgument(firstFloat + 1, sources.parseExpression("0.0f", "position placeholder"));
-        return sources.parseExpression(replacement.toString(), "serializer without nested positions");
-    }
-
     private static boolean isAccessor(Expression expression, String receiver, String name) {
         final String value = expression.toString().replace("()", "");
         return value.equals(receiver + '.' + name);
-    }
-
-    private static boolean isFloat(Parameter parameter) {
-        return parameter.getType().isPrimitiveType()
-                && parameter.getType().asPrimitiveType().getType()
-                == com.github.javaparser.ast.type.PrimitiveType.Primitive.FLOAT;
     }
 
     private static String constructor(String type, RecordDeclaration record, String receiver,
@@ -474,176 +488,63 @@ final class RetainedPacketMigrator {
         return "new " + type + '(' + String.join(", ", arguments) + ')';
     }
 
-    private static Expression reorderedBooleanSerializer(SourceIndex sources, ResolvedType packetType,
-                                                          Expression current,
-                                                          PacketMigrationScanner.Migration migration) {
-        final RecordDeclaration record = requireRecord(packetType);
-        if (record.getParameters().size() != 3 || migration.fixedSize() <= 0) {
-            throw new IllegalStateException("Reordered boolean payload source shape does not have three components");
+    private static Expression dispatchSerializer(SourceIndex sources, ResolvedType owner, Expression current,
+                                                  WireDispatch.Plan plan) {
+        var record = requireRecord(owner);
+        var baselinePlan = new WireMigration(plan.baseline(), plan.baseline(), List.of());
+        Map<Integer, String> sourceCodecs = requireBaselineSerializer(sources, owner, current, baselinePlan);
+        Map<WireSchema.Codec, DispatchRenderer.SourceCodec> codecs = new LinkedHashMap<>();
+        for (var field : plan.baseline().fields()) {
+            var source = new DispatchRenderer.SourceCodec(record.getParameter(field.component()).getType().asString(), sourceCodecs.get(field.component()));
+            var old = codecs.putIfAbsent(field.codec(), source);
+            if (old != null && !old.equals(source)) throw new IllegalStateException("Ambiguous source representation for dispatch payload " + field.codec());
         }
-        int booleanIndex = -1;
-        int stringsIndex = -1;
-        int objectIndex = -1;
-        for (int index = 0; index < record.getParameters().size(); index++) {
-            final Parameter parameter = record.getParameter(index);
-            if (parameter.getType().isPrimitiveType()
-                    && parameter.getType().asPrimitiveType().getType()
-                    == com.github.javaparser.ast.type.PrimitiveType.Primitive.BOOLEAN) booleanIndex = index;
-            else if (parameter.getType().asString().replace(" ", "").matches("(?:java\\.util\\.)?List<String>")) {
-                stringsIndex = index;
-            } else objectIndex = index;
+        var renderer = new DispatchRenderer(plan.dispatch(), codecs);
+        var parameters = record.getParameters().stream().map(Parameter::clone).toList();
+        String unionName = freshName("WireChoice", record.getMembers().stream().filter(TypeDeclaration.class::isInstance)
+                .map(TypeDeclaration.class::cast).map(TypeDeclaration::getNameAsString).collect(java.util.stream.Collectors.toSet()));
+        String payloadName = parameters.get(plan.legacySource()).getNameAsString() + "Path";
+        var newParameters = new com.github.javaparser.ast.NodeList<Parameter>();
+        for (int i = 0; i < plan.target().fields().size(); i++) {
+            var field = plan.target().fields().get(i);
+            if (field.component() == plan.unionComponent()) newParameters.add(new Parameter(sources.parser.parseType(unionName).getResult().orElseThrow(), payloadName));
+            else newParameters.add(parameters.get(plan.sources().get(i)).clone());
         }
-        if (booleanIndex < 0 || stringsIndex < 0 || objectIndex < 0
-                || !(current instanceof ObjectCreationExpr creation)) {
-            throw new IllegalStateException("Reordered boolean payload requires a custom serializer and flat source API");
+        // Preserve old construction with the uniquely identity-matched variant; obsolete values are accepted and ignored.
+        var arguments = new ArrayList<String>();
+        for (int i = 0; i < plan.sources().size(); i++) arguments.add(plan.sources().get(i) < 0
+                ? "new " + renderer.variantName(unionName, plan.legacyVariant()) + "(" + parameters.get(plan.legacySource()).getNameAsString() + ")"
+                : parameters.get(plan.sources().get(i)).getNameAsString());
+        if (!record.getConstructors().isEmpty() || !record.getCompactConstructors().isEmpty()) throw new IllegalStateException("Dispatch API migration requires review of custom constructors");
+        var retainedNames = newParameters.stream().map(Parameter::getNameAsString).collect(java.util.stream.Collectors.toSet());
+        for (var parameter : parameters) {
+            String name = parameter.getNameAsString();
+            if (retainedNames.contains(name)) continue;
+            boolean used = record.findAll(NameExpr.class).stream().anyMatch(e -> e.getNameAsString().equals(name) && !isWithin(e, current))
+                    || record.findAll(FieldAccessExpr.class).stream().anyMatch(e -> e.getNameAsString().equals(name) && !isWithin(e, current))
+                    || record.findAll(MethodCallExpr.class).stream().anyMatch(e -> e.getNameAsString().equals(name) && !isWithin(e, current));
+            if (used) throw new IllegalStateException("Removed source component has non-serializer uses: " + name);
         }
-        final String existing = current.toString();
-        final String type = record.getNameAsString();
-        final String objectName = record.getParameter(objectIndex).getNameAsString();
-        final String booleanName = record.getParameter(booleanIndex).getNameAsString();
-        final String stringsName = record.getParameter(stringsIndex).getNameAsString();
-        final String listFactory = record.getParameter(stringsIndex).getType().asString().replace(" ", "")
-                .startsWith("java.util.List") ? "java.util.List" : "List";
-        if (existing.contains("booleanValueId") && existing.contains("NetworkBuffer.VAR_INT")) {
-            final String normalized = listFactory.equals("List")
-                    ? existing.replace("java.util.List.of(", "List.of(")
-                    : existing.replace("var stringValues = List.of(", "var stringValues = java.util.List.of(");
-            return normalized.equals(existing) ? current.clone()
-                    : sources.parseExpression(normalized, "qualified reordered boolean serializer");
+        record.setParameters(newParameters);
+        var compatibility = new com.github.javaparser.ast.body.ConstructorDeclaration();
+        compatibility.setName(record.getNameAsString()).setPublic(true).setParameters(new com.github.javaparser.ast.NodeList<>(parameters));
+        compatibility.setBody(sources.parser.parseBlock("{ this(" + String.join(", ", arguments) + "); }").getResult().orElseThrow());
+        record.addMember(compatibility);
+        String declaration = renderer.declarations(unionName);
+        var unit = sources.parser.parse("class Container { " + declaration + " }").getResult().orElseThrow();
+        unit.getClassByName("Container").orElseThrow().getMembers().forEach(member -> record.addMember(member.clone()));
+        String type = record.getNameAsString();
+        StringBuilder write = new StringBuilder(), read = new StringBuilder(); List<String> values = new ArrayList<>();
+        for (int i = 0; i < plan.target().fields().size(); i++) {
+            boolean union = plan.sources().get(i) < 0;
+            String codec = union ? unionName + ".SERIALIZER" : sourceCodecs.get(plan.sources().get(i));
+            String name = newParameters.get(i).getNameAsString(), variable = "component" + i;
+            write.append("buffer.write(").append(sourceCodec(owner, codec)).append(", value.").append(name).append("());\n");
+            read.append("var ").append(variable).append(" = buffer.read(").append(sourceCodec(owner, codec)).append(");\n");
+            values.add(variable);
         }
-        if (existing.contains("boolean booleanValue = buffer.read(VAR_INT) != 0")
-                && existing.contains("? 1 : 0")) {
-            final String upgraded = existing
-                    .replace("buffer.write(VAR_INT, value." + booleanName + "() ? 1 : 0)",
-                            "buffer.write(NetworkBuffer.VAR_INT, value." + booleanName + "() ? "
-                                    + migration.trueId() + " : " + migration.falseId() + ")")
-                    .replace("var stringValues = List.of(", "var stringValues = " + listFactory + ".of(")
-                    .replace("boolean booleanValue = buffer.read(VAR_INT) != 0;", """
-                            int booleanValueId = buffer.read(NetworkBuffer.VAR_INT);
-                            boolean booleanValue;
-                            if (booleanValueId == %d) booleanValue = true;
-                            else if (booleanValueId == %d) booleanValue = false;
-                            else throw new IllegalArgumentException("Unknown binary enum id: " + booleanValueId);"""
-                            .formatted(migration.trueId(), migration.falseId()));
-            return sources.parseExpression(upgraded, "legacy reordered boolean serializer");
-        }
-        final List<MethodCallExpr> writes = creation.findAll(MethodCallExpr.class).stream()
-                .filter(call -> call.getNameAsString().equals("write") && call.getArguments().size() == 2).toList();
-        final Expression objectCodec = uniqueCodec(writes, "BOOLEAN", "STRING");
-        final Expression stringCodec = uniqueNamedCodec(writes, "STRING");
-        if (writes.stream().filter(call -> terminalName(call.getArgument(0)).equals("STRING")).count()
-                != migration.fixedSize()) {
-            throw new IllegalStateException("Fixed string payload source write count does not match target");
-        }
-        final StringBuilder stringWrites = new StringBuilder();
-        final StringBuilder stringReads = new StringBuilder();
-        for (int index = 0; index < migration.fixedSize(); index++) {
-            stringWrites.append("            buffer.write(").append(stringCodec).append(", value.")
-                    .append(stringsName).append("().get(").append(index).append("));\n");
-            if (index > 0) stringReads.append(", ");
-            stringReads.append("buffer.read(").append(stringCodec).append(")");
-        }
-        final String[] arguments = new String[3];
-        arguments[objectIndex] = "objectValue";
-        arguments[booleanIndex] = "booleanValue";
-        arguments[stringsIndex] = "stringValues";
-        return sources.parseExpression("""
-                new NetworkBuffer.Type<%s>() {
-                    @Override
-                    public void write(NetworkBuffer buffer, %s value) {
-                        buffer.write(%s, value.%s());
-                %s        buffer.write(NetworkBuffer.VAR_INT, value.%s() ? %d : %d);
-                    }
-
-                    @Override
-                    public %s read(NetworkBuffer buffer) {
-                        var objectValue = buffer.read(%s);
-                        var stringValues = %s.of(%s);
-                        int booleanValueId = buffer.read(NetworkBuffer.VAR_INT);
-                        boolean booleanValue;
-                        if (booleanValueId == %d) booleanValue = true;
-                        else if (booleanValueId == %d) booleanValue = false;
-                        else throw new IllegalArgumentException("Unknown binary enum id: " + booleanValueId);
-                        return new %s(%s);
-                    }
-                }
-                """.formatted(type, type, objectCodec, objectName, stringWrites, booleanName,
-                migration.trueId(), migration.falseId(), type, objectCodec, listFactory, stringReads,
-                migration.trueId(), migration.falseId(), type, String.join(", ", arguments)),
-                "reordered boolean serializer");
-    }
-
-    private static Expression linearPositionSerializer(SourceIndex sources, ResolvedType packetType,
-                                                        Expression current,
-                                                        PacketMigrationScanner.Migration migration) {
-        final RecordDeclaration record = requireRecord(packetType);
-        if (record.getParameters().size() != 6) {
-            throw new IllegalStateException("Linear position-path source shape does not have six components");
-        }
-        final MethodCallExpr template = current.toMethodCallExpr()
-                .filter(call -> call.getNameAsString().equals("template"))
-                .orElse(null);
-        if (template == null) {
-            final String existing = current.toString();
-            if (existing.contains("buffer.write(NetworkBuffer.VAR_INT, " + migration.discriminator() + ")")
-                    && existing.contains("component2 = component1")) return current.clone();
-            if (existing.contains("buffer.write(VAR_INT, " + migration.discriminator() + ")")
-                    && existing.contains("component2 = component1")) {
-                return sources.parseExpression(existing
-                                .replace("buffer.write(VAR_INT,", "buffer.write(NetworkBuffer.VAR_INT,")
-                                .replace("buffer.read(VAR_INT)", "buffer.read(NetworkBuffer.VAR_INT)"),
-                        "legacy linear position serializer");
-            }
-            throw new IllegalStateException("Linear position-path migration requires a template serializer");
-        }
-        if (template.getArguments().size() != 13
-                || !record.getParameter(0).getType().isPrimitiveType()
-                || !record.getParameter(1).getType().equals(record.getParameter(2).getType())
-                || !record.getParameter(3).getType().isPrimitiveType()
-                || !record.getParameter(4).getType().isPrimitiveType()
-                || !record.getParameter(5).getType().isPrimitiveType()) {
-            throw new IllegalStateException("Linear position-path source component shape is incompatible");
-        }
-        final Expression[] codecs = new Expression[6];
-        for (int index = 0; index < codecs.length; index++) codecs[index] = template.getArgument(index * 2).clone();
-        if (!terminalName(codecs[0]).equals("VAR_INT") || !codecs[1].equals(codecs[2])
-                || !terminalName(codecs[3]).equals("FLOAT") || !terminalName(codecs[4]).equals("FLOAT")
-                || !terminalName(codecs[5]).equals("BOOLEAN")) {
-            throw new IllegalStateException("Linear position-path source codecs are incompatible");
-        }
-        final String type = record.getNameAsString();
-        final StringBuilder writes = new StringBuilder();
-        writes.append("        buffer.write(").append(codecs[0]).append(", value.")
-                .append(record.getParameter(0).getNameAsString()).append("());\n")
-                .append("        buffer.write(NetworkBuffer.VAR_INT, ").append(migration.discriminator()).append(");\n")
-                .append("        buffer.write(").append(codecs[1]).append(", value.")
-                .append(record.getParameter(1).getNameAsString()).append("());\n");
-        for (int index = 3; index < 6; index++) writes.append("        buffer.write(").append(codecs[index])
-                .append(", value.").append(record.getParameter(index).getNameAsString()).append("());\n");
-        return sources.parseExpression("""
-                new NetworkBuffer.Type<%s>() {
-                    @Override
-                    public void write(NetworkBuffer buffer, %s value) {
-                %s    }
-
-                    @Override
-                    public %s read(NetworkBuffer buffer) {
-                        %s component0 = buffer.read(%s);
-                         int discriminator = buffer.read(NetworkBuffer.VAR_INT);
-                        if (discriminator != %d) throw new IllegalArgumentException("Unsupported position path id: " + discriminator);
-                        %s component1 = buffer.read(%s);
-                        %s component2 = component1;
-                        %s component3 = buffer.read(%s);
-                        %s component4 = buffer.read(%s);
-                        %s component5 = buffer.read(%s);
-                        return new %s(component0, component1, component2, component3, component4, component5);
-                    }
-                }
-                """.formatted(type, type, writes, type,
-                record.getParameter(0).getType(), codecs[0], migration.discriminator(),
-                record.getParameter(1).getType(), codecs[1], record.getParameter(2).getType(),
-                record.getParameter(3).getType(), codecs[3], record.getParameter(4).getType(), codecs[4],
-                record.getParameter(5).getType(), codecs[5], type), "linear position-path serializer");
+        return sources.parseExpression("new NetworkBuffer.Type<" + type + ">() { @Override public void write(NetworkBuffer buffer, " + type + " value) { "
+                + write + " } @Override public " + type + " read(NetworkBuffer buffer) { " + read + "return new " + type + "(" + String.join(", ", values) + "); } }", "dispatch serializer");
     }
 
     private static Map<Integer, String> requireBaselineSerializer(SourceIndex sources, ResolvedType type,
@@ -700,7 +601,8 @@ final class RetainedPacketMigrator {
             for (int i = 0; i < actual.size(); i++) {
                 final int component = actual.get(i);
                 final List<com.github.javaparser.ast.stmt.Statement> chunk = chunks.get(i);
-                final String codec = directWriteCodec(chunk, buffer, component, record, value);
+                String codec = directWriteCodec(chunk, buffer, component, record, value);
+                if (codec == null) codec = fixedWritesCodec(chunk, buffer, component, record, value, migration.baseline());
                 codecs.put(component, codec != null ? codec
                         : sources.componentNetworkType(type, component, chunk, buffer, value));
             }
@@ -732,6 +634,31 @@ final class RetainedPacketMigrator {
                     binding.constant()));
         }
         return new WireMigration(migration.baseline(), migration.target(), bindings);
+    }
+
+    private static String fixedWritesCodec(List<com.github.javaparser.ast.stmt.Statement> statements, String buffer,
+                                           int component, RecordDeclaration record, String value, WireSchema schema) {
+        var field = schema.fields().stream().filter(f -> f.component() == component).findFirst().orElseThrow();
+        var fixed = field.codec().operations().stream().filter(op -> op.startsWith("fixed:")).findFirst();
+        if (fixed.isEmpty() || statements.size() != Integer.parseInt(fixed.get().substring(6))) return null;
+        String elementCodec = null;
+        for (int i = 0; i < statements.size(); i++) {
+            if (!statements.get(i).isExpressionStmt() || !(statements.get(i).asExpressionStmt().getExpression() instanceof MethodCallExpr call)
+                    || !call.getNameAsString().equals("write") || call.getArguments().size() != 2
+                    || !call.getScope().map(Object::toString).orElse("").equals(buffer)
+                    || !(call.getArgument(1) instanceof MethodCallExpr get) || !get.getNameAsString().equals("get") || get.getArguments().size() != 1
+                    || !get.getArgument(0).isIntegerLiteralExpr() || get.getArgument(0).asIntegerLiteralExpr().asInt() != i
+                    || sourceComponent(record, get.getScope().orElseThrow(), value) != component) return null;
+            String codec = call.getArgument(0).toString();
+            if (elementCodec != null && !elementCodec.equals(codec)) return null;
+            elementCodec = codec;
+        }
+        var translated = PacketCodecScanner.translate(field.codec());
+        if (!translated.supported()) return null;
+        // The scalar encoding is verified independently of the list representation.
+        var base = PacketCodecScanner.translate(new WireSchema.Codec(field.codec().owner(), field.codec().name()));
+        if (!normalizedCodec(elementCodec).equals(normalizedCodec(base.networkType()))) return null;
+        return translated.networkType();
     }
 
     private static String directWriteCodec(List<com.github.javaparser.ast.stmt.Statement> statements, String buffer,
@@ -842,6 +769,7 @@ final class RetainedPacketMigrator {
         }
         output.append(");\n}\n}");
         final Expression formatted = sources.parseExpression(output.toString(), "schema-derived packet serializer");
+        sources.shortenJdkNames(packetType.source().unit(), formatted);
         return sources.parseExpression(formatted.toString(), "formatted schema-derived packet serializer");
     }
 
@@ -914,6 +842,7 @@ final class RetainedPacketMigrator {
                     }
                 }
                 """.formatted(type, type, delegate, type, writes, type, reads), "schema-derived wire suffix");
+        sources.shortenJdkNames(packetType.source().unit(), result);
         if (delegate != current && !result.equals(current)) return suffixSerializer(sources, packetType, current, fields, false);
         return result;
     }
@@ -928,7 +857,7 @@ final class RetainedPacketMigrator {
     private static String semanticKey(PacketMigrationScanner.Migration migration) {
         return migration.kind() + ":" + migration.ids() + ':' + migration.targetEnum()
                 + ':' + migration.fixedSize() + ':' + migration.discriminator() + ':' + migration.defaultValue()
-                + ':' + migration.falseId() + ':' + migration.trueId() + ':' + migration.wire() + ':' + migration.suffix() + ':' + migration.codec();
+                + ':' + migration.falseId() + ':' + migration.trueId() + ':' + migration.wire() + ':' + migration.suffix() + ':' + migration.codec() + ':' + migration.dispatch() + ':' + migration.move();
     }
 
     private static List<Node> obsoletePrivateHelpers(ResolvedType packetType, Expression serializer) {
@@ -940,21 +869,6 @@ final class RetainedPacketMigrator {
                 .filter(method -> packetType.declaration().findAll(MethodCallExpr.class).stream()
                         .filter(call -> call.getNameAsString().equals(method.getNameAsString())).count() == 1)
                 .map(method -> (Node) method).toList();
-    }
-
-    private static Expression uniqueCodec(List<MethodCallExpr> writes, String... excluded) {
-        final Set<String> names = Set.of(excluded);
-        final List<Expression> matches = writes.stream().map(call -> call.getArgument(0))
-                .filter(codec -> !names.contains(terminalName(codec))).map(Expression::clone).distinct().toList();
-        if (matches.size() != 1) throw new IllegalStateException("Unable to identify unique payload object codec");
-        return matches.getFirst();
-    }
-
-    private static Expression uniqueNamedCodec(List<MethodCallExpr> writes, String name) {
-        final List<Expression> matches = writes.stream().map(call -> call.getArgument(0))
-                .filter(codec -> terminalName(codec).equals(name)).map(Expression::clone).distinct().toList();
-        if (matches.size() != 1) throw new IllegalStateException("Unable to identify unique " + name + " codec");
-        return matches.getFirst();
     }
 
     private static String terminalName(Expression expression) {
@@ -1012,9 +926,13 @@ final class RetainedPacketMigrator {
         private final Map<SerializerSlot, WireMigration> resolvedWirePlans = new HashMap<>();
 
         private String importName(ResolvedType owner, String qualified) {
+            return importName(owner.source().unit(), qualified);
+        }
+
+        private String importName(CompilationUnit unit, String qualified) {
             final String simple = qualified.substring(qualified.lastIndexOf('.') + 1);
-            final var unit = owner.source().unit();
             final boolean conflict = unit.findAll(TypeDeclaration.class).stream().anyMatch(type -> type.getNameAsString().equals(simple))
+                    || unit.findAll(com.github.javaparser.ast.type.TypeParameter.class).stream().anyMatch(type -> type.getNameAsString().equals(simple))
                     || unit.getImports().stream().anyMatch(value -> !value.isAsterisk() && !value.isStatic()
                     && value.getName().getIdentifier().equals(simple) && !value.getNameAsString().equals(qualified));
             if (conflict) return qualified;
@@ -1261,8 +1179,31 @@ final class RetainedPacketMigrator {
         private void writeChanged() throws IOException {
             for (ParsedSource source : parsed.values()) {
                 if (source.unit().getTokenRange().map(range -> range.getBegin().getText()).isEmpty()) continue;
+                shortenJdkNames(source.unit());
                 final String printed = removeUnusedImports(LexicalPreservingPrinter.print(source.unit()));
                 if (!printed.equals(Files.readString(source.path()))) Files.writeString(source.path(), printed);
+            }
+        }
+
+        private void shortenJdkNames(CompilationUnit unit) {
+            shortenJdkNames(unit, unit);
+        }
+
+        private void shortenJdkNames(CompilationUnit unit, Node node) {
+            String qualifiedType = "java(?:\\.[a-z][\\w]*)+\\.[A-Z][\\w]*";
+            for (var type : List.copyOf(node.findAll(com.github.javaparser.ast.type.ClassOrInterfaceType.class))) {
+                String qualified = type.getNameWithScope();
+                if (!qualified.matches(qualifiedType)) continue;
+                String simple = importName(unit, qualified);
+                if (simple.equals(qualified)) continue;
+                type.setScope(null);
+                type.setName(simple);
+            }
+            for (var field : List.copyOf(node.findAll(FieldAccessExpr.class))) {
+                String qualified = field.toString();
+                if (!qualified.matches(qualifiedType)) continue;
+                String simple = importName(unit, qualified);
+                if (!simple.equals(qualified)) field.replace(new NameExpr(simple));
             }
         }
 

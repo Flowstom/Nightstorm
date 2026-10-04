@@ -34,6 +34,7 @@ final class SourceTransaction {
             copyIfPresent(root.resolve(".nightstorm/packet-warnings.md"),
                     staging.resolve(".nightstorm/packet-warnings.md"));
             copyIfPresent(root.resolve(".nightstorm/wire-adapters.json"), staging.resolve(".nightstorm/wire-adapters.json"));
+            copyIfPresent(root.resolve(".nightstorm/structural-adapters.json"), staging.resolve(".nightstorm/structural-adapters.json"));
             if (outputPath != null) copyIfPresent(outputPath.toAbsolutePath().normalize(), stagedOutput);
 
             final T result = operation.run(staging, stagedOutput);
@@ -43,6 +44,7 @@ final class SourceTransaction {
             collectFileChange(root.resolve(".nightstorm/packet-warnings.md"),
                     staging.resolve(".nightstorm/packet-warnings.md"), writes, deletes);
             collectFileChange(root.resolve(".nightstorm/wire-adapters.json"), staging.resolve(".nightstorm/wire-adapters.json"), writes, deletes);
+            collectFileChange(root.resolve(".nightstorm/structural-adapters.json"), staging.resolve(".nightstorm/structural-adapters.json"), writes, deletes);
             if (outputPath != null) {
                 collectFileChange(outputPath.toAbsolutePath().normalize(), stagedOutput, writes, deletes);
             }

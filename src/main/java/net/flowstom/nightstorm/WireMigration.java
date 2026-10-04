@@ -16,10 +16,23 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
     }
 
     static Optional<WireMigration> plan(ClassNode before, ClassNode after, Function<String, ClassNode> classes) {
-        var oldSchema = WireSchema.scan(before, classes);
+        return plan(before, after, classes, classes, (oldField, newField) -> null);
+    }
+
+    static Optional<WireMigration> plan(ClassNode before, ClassNode after, Function<String, ClassNode> baselineClasses,
+                                        Function<String, ClassNode> classes,
+                                        java.util.function.BiFunction<WireSchema.Component, WireSchema.Component, BooleanEnumProof.Ids> booleanProof) {
+        var oldSchema = WireSchema.scan(before, baselineClasses);
         var newSchema = WireSchema.scan(after, classes);
         if (oldSchema.isEmpty() || newSchema.isEmpty()) return Optional.empty();
         var baseline = oldSchema.get();
+        if ((before.recordComponents == null || before.recordComponents.isEmpty())
+                && baseline.fields().stream().anyMatch(f -> oldSchema.get().components().get(f.component()).descriptor().startsWith("[")
+                && f.codec().operations().stream().anyMatch(op -> op.startsWith("fixed:")))) {
+            var schema = baseline;
+            baseline = new WireSchema(schema.owner(), schema.fields().stream().map(f -> schema.components().get(f.component())).toList(),
+                    java.util.stream.IntStream.range(0, schema.fields().size()).mapToObj(i -> new WireSchema.Field(i, schema.fields().get(i).codec())).toList());
+        }
         var target = newSchema.get();
         if (baseline.components().equals(target.components()) && baseline.fields().equals(target.fields())) return Optional.empty();
         var oldCodecs = new HashMap<Integer, WireSchema.Codec>();
@@ -46,18 +59,39 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
             ConstructorMapping.Value value = constructor.get(component.name());
             if (constructor.isEmpty()) {
                 for (int i = 0; i < baseline.components().size(); i++) {
-                    if (baseline.components().get(i).equals(component)) value = new ConstructorMapping.Parameter(i, component.descriptor());
+                    if (baseline.components().get(i).equals(component) || baseline.components().get(i).name().equals(component.name())
+                            && baseline.components().get(i).descriptor().startsWith("[") && component.descriptor().equals("Ljava/util/List;")) value = new ConstructorMapping.Parameter(i, component.descriptor());
                 }
             }
             var codec = translate(field.codec(), component, classes);
+            BooleanEnumProof.Ids booleanIds = null;
+            if (value == null && component.descriptor().startsWith("L")) {
+                ClassNode enumeration = classes.apply(Type.getType(component.descriptor()).getInternalName());
+                if (enumeration != null && enumIdCodec(enumeration)) {
+                    for (int i = 0; i < baseline.components().size(); i++) {
+                        var candidate = baseline.components().get(i);
+                        if (!candidate.descriptor().equals("Z")) continue;
+                        var proof = booleanProof.apply(candidate, component);
+                        if (proof == null) continue;
+                        if (booleanIds != null) return Optional.empty();
+                        booleanIds = proof;
+                        value = new ConstructorMapping.Parameter(i, "Z");
+                    }
+                }
+            }
             int source = -1;
             String constant = null;
             String javaType = codec.javaType(), networkType = codec.networkType();
             if (value instanceof ConstructorMapping.Parameter parameter) {
                 source = parameter.index();
-                if (!parameter.descriptor().equals(component.descriptor()) || oldCodecs.get(source) == null
-                        || !compatibleEncoding(oldCodecs.get(source), field.codec())) return Optional.empty();
-                if (!codec.supported()) {
+                boolean container = parameter.descriptor().startsWith("[") && component.descriptor().equals("Ljava/util/List;");
+                if (oldCodecs.get(source) == null || booleanIds == null && ((!parameter.descriptor().equals(component.descriptor()) && !container)
+                        || !compatibleEncoding(oldCodecs.get(source), field.codec()))) return Optional.empty();
+                if (booleanIds != null) {
+                    javaType = "boolean";
+                    networkType = CodecChange.bool(booleanIds.falseId(), booleanIds.trueId()).expression();
+                }
+                if (!codec.supported() && booleanIds == null) {
                     javaType = "";
                     networkType = "";
                 }
@@ -76,7 +110,7 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
                 constant = literal(literal.value(), component.descriptor());
                 if (constant == null || !codec.supported()) return Optional.empty();
             } else if (!codec.supported()) return Optional.empty();
-            if (codec.supported() && !codec.vanillaDescriptor().equals(component.descriptor())) return Optional.empty();
+            if (booleanIds == null && codec.supported() && !codec.vanillaDescriptor().equals(component.descriptor())) return Optional.empty();
             bindings.add(new Binding(field.component(), source, javaType, networkType, constant));
         }
         return Optional.of(new WireMigration(baseline, target, bindings));
@@ -84,6 +118,9 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
 
     static boolean compatibleEncoding(WireSchema.Codec before, WireSchema.Codec after) {
         if (before.equals(after)) return true;
+        if (before.owner().equals(after.owner()) && before.name().equals(after.name()) && before.arguments().equals(after.arguments())
+                && before.operations().stream().filter(op -> !op.startsWith("limit:")).toList()
+                .equals(after.operations().stream().filter(op -> !op.startsWith("limit:")).toList())) return true;
         if (!before.owner().equals(WireSchema.BYTE_CODECS) || !after.owner().equals(WireSchema.BYTE_CODECS)
                 || !before.operations().isEmpty() || !after.operations().isEmpty()) return false;
         final Set<String> pair = Set.of(before.name(), after.name());
@@ -118,15 +155,7 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
 
     private static PacketCodecScanner.CodecType translate(WireSchema.Codec codec, WireSchema.Component component,
                                                           Function<String, ClassNode> classes) {
-        var translated = PacketCodecScanner.translate(codec);
-        if (translated.supported() || !codec.operations().isEmpty() || !codec.name().equals("STREAM_CODEC")
-                || !component.descriptor().equals("L" + codec.owner() + ";")) return translated;
-        final ClassNode owner = classes.apply(codec.owner());
-        if (owner != null && enumIdCodec(owner)) {
-            PacketMigrationScanner.enumIds(owner); // Fail closed if the ID table cannot be established.
-            return new PacketCodecScanner.CodecType("int", "NetworkBuffer.VAR_INT", codec.owner(), component.descriptor(), true);
-        }
-        return translated;
+        return PacketCodecScanner.translate(codec);
     }
 
     static boolean enumIdCodec(ClassNode owner) {

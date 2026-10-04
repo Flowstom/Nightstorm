@@ -1,6 +1,6 @@
 # Packet migration pipeline
 
-Nightstorm uses a shared `WireSchema` for new packet generation and generic retained-packet migrations. The schema records constructor component identity separately from serialization order. It recognizes bound composite codecs, unit codecs, and straight-line manual buffer readers/writers whose field bindings agree in both directions. Unsupported codecs retain the existing diagnostic/fallback behavior.
+Nightstorm uses a shared `WireSchema` for new packet generation and generic retained-packet migrations. The schema records constructor component identity separately from serialization order. It recognizes bound composite codecs, unit codecs, and manual buffer readers/writers whose field bindings agree in both directions. `WireManual` also executes bounded constant array loops, proving the element count, order, and codec in both directions. Data-dependent branches and arbitrary calls remain unsupported. Unsupported codecs retain the existing diagnostic/fallback behavior.
 
 `ConstructorMapping` interprets parameter loads (including wide local slots), numeric constants, enum constants, field assignments and delegation to another constructor in the same class. It rejects branches, arithmetic, arbitrary calls and ambiguous assignments. A compatibility constructor matching the baseline signature can therefore prove defaults, field renames and one-to-many mappings without knowing a packet name or Minecraft version.
 
@@ -26,13 +26,19 @@ Boolean-to-enum polarity follows the packet accessor into corresponding consumer
 
 Packet direction comes from the actual `PacketFlow` constructor argument, following static factories where necessary. Packet field prefixes and individual packet-name exceptions are no longer used.
 
-## Remaining specialized rules
+## Structural API changes and limits
 
 The teleport-confirm and particle-specific matchers and serializers have been removed. Their changes now exercise field addition, constructor-derived repeated arguments/defaults, reordering and integer encoding changes. Tests also use unrelated packet and field names, a nonzero enum default, invalid bindings, unsupported constructor bodies, narrowing encodings and successive schema migrations.
 
-Three packet shape adapters remain specialized: the three-field boolean/string-list reorder, the linear position-path dispatch, and moving a pair of nested floats. The boolean mapping in the first adapter is inferred, but its shape matcher and serializer still assume that layout. The other two retain representation assumptions, including duplicated position values and zero float placeholders. These are not a general nested/dispatch interpreter.
+The former boolean/string-list adapter now uses `WireMigration`: fixed-length collections and string limits come from the codec, field order comes from accessor bindings, and boolean polarity comes from consumer evidence. Neither field count nor list length selects the migration.
 
-Source API expansion is limited to direct projections with supported collection additions and removals. In particular, the retained teleport API still exposes only its ID, and the retained particle API cannot express independent axis speeds or arbitrary randomization modes. Constructor inference proves compatibility mappings, not new listener behavior. Jumping directly from 26.2 to 26.4-snapshot-2 still encounters unsupported intermediate schema changes; the normal 26.3-rc-3 continuation is validated. The separate data-accessor resolver is described in [enum-data-access.md](enum-data-access.md), and installer/data limitations in [source-integrations.md](source-integrations.md).
+`WireDispatch` proves enum catalog IDs, catalog-to-payload codec bindings, and each variant's selector. It accepts bound composites and mapped carriers whose encoded constructor input is retained unchanged. An unconditional `getFirst` or `getLast` on that input establishes a nonempty-list constraint. `DispatchRenderer` exposes every proved variant through a sealed interface and generated records, including structured list elements. Legacy constructors select the unique compatible unary variant. Unknown tags are rejected, and obsolete values are no longer duplicated into unrelated fields. This is bounded enum dispatch support; arbitrary factories, computed catalogs, and unproved payload codecs stop the structural migration. Unsupported existing dispatch codecs continue through the existing scanner behavior.
+
+`WireFieldMove` discovers scalar fields removed from a nested type and added to a collection element wrapper. It checks baseline tail writes, reader/setter assignments, field identity and type, and JVM defaults for fields without constructor assignments. The source adapter traverses record fields to locate the moved values, adds explicit wrapper components, and retains them even when the nested object is absent. Compatibility constructors derive values from the old nested API or the proved baseline defaults. Record-copy methods preserve explicit wrapper values. This currently supports one direct collection component, an unchanged element codec, scalar suffix fields, and record paths up to sixteen levels; conditional scalar encodings and arbitrary object graphs are unsupported.
+
+Dispatch and moved-field adapters save their schema and source hashes in `.nightstorm/structural-adapters.json`. Repetition is idempotent; source edits or a changed structural catalog require a new API projection instead of silently overwriting an existing adapter. The metadata participates in the same source transaction as generated Java.
+
+Source API expansion covers the proved projections and structural changes above. The retained teleport API still exposes only its ID, and the retained particle API cannot express independent axis speeds or arbitrary randomization modes. Constructor inference proves compatibility mappings, not new listener behavior. Jumping directly from 26.2 to 26.4-snapshot-2 still encounters unsupported intermediate spawn-schema changes; updates through 26.3-rc-3 are the validated path. The separate enum data-accessor resolver is described in [enum-data-access.md](enum-data-access.md), and scalar/data limitations in [source-integrations.md](source-integrations.md).
 
 ## Validation
 
@@ -42,7 +48,7 @@ Run the self-contained regression suite with:
 ./gradlew test
 ```
 
-`VanillaCodecIntegrationTest` additionally compares generated serializers against the real vanilla encoder/decoder, including field values, byte-for-byte re-encoding and full payload consumption. It covers particles, a nonzero teleport confirmation, a nonempty transfer-properties map, and registry-backed spawn data after seed removal. This opt-in fixture targets the upstream changes that motivated the generic implementation.
+`VanillaCodecIntegrationTest` additionally compares generated serializers against the real vanilla encoder/decoder, including field values, byte-for-byte re-encoding and full payload consumption. It covers particles, a nonzero teleport confirmation, a nonempty transfer-properties map, registry-backed spawn data after seed removal, both sign slots with Unicode lines, both position-path variants with nonempty steps, and nonzero moved coordinates with an absent advancement display. Prepare a fresh stream through 26.3-rc-3 before advancing it to the target: historical branches generated with the old specialized adapter do not expose the expanded dispatch API used by this fixture.
 
 To run it, prepare/build the generated source and data-generator projects using the normal update scripts. Create a directory containing `vanilla.txt` and `generated.txt`, each with its project's `main.runtimeClasspath` as a single platform-separated line. `scripts/codec-test-classpath.gradle` exports this as `NIGHTSTORM_CP=...`:
 

@@ -78,9 +78,126 @@ class VanillaCodecIntegrationTest {
             assertEquals((long) confirmationBytes.length, bufferClass.getMethod("readIndex").invoke(confirmationInput));
             byteBuf.getMethod("release").invoke(teleportOutput);
             verifyTransferAndSpawn(vanilla, generated, registries);
+            verifyStructuralAdapters(vanilla, generated, registries);
         } finally {
             System.setOut(stdout);
             System.setErr(stderr);
+        }
+    }
+
+    private static void verifyStructuralAdapters(ClassLoader vanilla, ClassLoader generated, Object registries) throws Exception {
+        final var point = generated.loadClass("net.minestom.server.coordinate.Point");
+        final var vector = generated.loadClass("net.minestom.server.coordinate.Vec");
+        final Object position = vector.getConstructor(double.class, double.class, double.class).newInstance(12d, -3d, 45d);
+        final var sign = generated.loadClass("net.minestom.server.network.packet.client.play.ClientUpdateSignPacket");
+        final var nativeSign = vanilla.loadClass("net.minecraft.network.protocol.game.ServerboundSignUpdatePacket");
+        final var blockPos = vanilla.loadClass("net.minecraft.core.BlockPos");
+        final var slot = vanilla.loadClass("net.minecraft.world.level.block.entity.SignTextSlot");
+        final var lines = java.util.List.of("first", "žluťoučký", "🙂", "fourth");
+        for (boolean front : new boolean[]{false, true}) {
+            final Object retained = sign.getConstructor(point, boolean.class, java.util.List.class).newInstance(position, front, lines);
+            final Object nativeValue = nativeSign.getConstructor(blockPos, java.util.List.class, slot).newInstance(
+                    blockPos.getConstructor(int.class, int.class, int.class).newInstance(12, -3, 45), lines,
+                    slot.getField(front ? "FRONT" : "BACK").get(null));
+            verifyPair(vanilla, generated, registries, sign, "SERIALIZER", retained, nativeSign, nativeValue);
+        }
+
+        final var sync = generated.loadClass("net.minestom.server.network.packet.server.play.EntityPositionSyncPacket");
+        final var choice = generated.loadClass(sync.getName() + "$WireChoice");
+        final var linear = generated.loadClass(sync.getName() + "$WireChoiceCase0");
+        final var stepped = generated.loadClass(sync.getName() + "$WireChoiceCase1");
+        final var step = generated.loadClass(sync.getName() + "$WirePayload2");
+        final var nativeSync = vanilla.loadClass("net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket");
+        final var nativePath = vanilla.loadClass("net.minecraft.world.entity.PositionPath");
+        final var nativeVector = vanilla.loadClass("net.minecraft.world.phys.Vec3");
+        final var nativeStep = vanilla.loadClass("net.minecraft.world.entity.PositionStep");
+        final Object nativePosition = nativeVector.getConstructor(double.class, double.class, double.class).newInstance(12d, -3d, 45d);
+        final Object otherPosition = vector.getConstructor(double.class, double.class, double.class).newInstance(-5.5d, 60d, 0.25d);
+        final Object otherNativePosition = nativeVector.getConstructor(double.class, double.class, double.class).newInstance(-5.5d, 60d, 0.25d);
+        final Object[] choices = {
+                linear.getConstructor(point).newInstance(position),
+                stepped.getConstructor(java.util.List.class).newInstance(java.util.List.of(
+                        step.getConstructor(point, int.class).newInstance(position, 3),
+                        step.getConstructor(point, int.class).newInstance(otherPosition, 19)))
+        };
+        final Object[] nativeChoices = {
+                vanilla.loadClass(nativePath.getName() + "$Linear").getConstructor(nativeVector).newInstance(nativePosition),
+                vanilla.loadClass(nativePath.getName() + "$Stepped").getConstructor(java.util.List.class).newInstance(java.util.List.of(
+                        nativeStep.getConstructor(nativeVector, int.class).newInstance(nativePosition, 3),
+                        nativeStep.getConstructor(nativeVector, int.class).newInstance(otherNativePosition, 19)))
+        };
+        for (int i = 0; i < choices.length; i++) {
+            final Object retained = sync.getConstructor(int.class, choice, float.class, float.class, boolean.class)
+                    .newInstance(12345, choices[i], 89.5f, -12f, true);
+            final Object nativeValue = nativeSync.getConstructor(int.class, nativePath, float.class, float.class, boolean.class)
+                    .newInstance(12345, nativeChoices[i], 89.5f, -12f, true);
+            verifyPair(vanilla, generated, registries, sync, "SERIALIZER", retained, nativeSync, nativeValue);
+        }
+        final Object emptyPath = stepped.getConstructor(java.util.List.class).newInstance(java.util.List.of());
+        final Object invalid = sync.getConstructor(int.class, choice, float.class, float.class, boolean.class)
+                .newInstance(1, emptyPath, 0f, 0f, false);
+        final var generatedBuffer = generated.loadClass("net.minestom.server.network.NetworkBuffer");
+        final var generatedType = generated.loadClass("net.minestom.server.network.NetworkBuffer$Type");
+        final var rejection = assertThrows(java.lang.reflect.InvocationTargetException.class, () ->
+                generatedBuffer.getMethod("makeArray", generatedType, Object.class).invoke(null, sync.getField("SERIALIZER").get(null), invalid));
+        assertInstanceOf(IllegalArgumentException.class, rejection.getCause());
+
+        final var mapping = generated.loadClass("net.minestom.server.network.packet.server.play.AdvancementsPacket$AdvancementMapping");
+        final var advancement = generated.loadClass("net.minestom.server.network.packet.server.play.AdvancementsPacket$Advancement");
+        final var display = generated.loadClass("net.minestom.server.network.packet.server.play.AdvancementsPacket$DisplayData");
+        final Object value = advancement.getConstructor(String.class, display, java.util.List.class, boolean.class)
+                .newInstance(null, null, java.util.List.of(), false);
+        final Object retained = mapping.getConstructor(String.class, advancement, float.class, float.class)
+                .newInstance("test:empty", value, 12.5f, -4.75f);
+        final var nativeAdvancement = vanilla.loadClass("net.minecraft.advancements.Advancement");
+        final var rewards = vanilla.loadClass("net.minecraft.advancements.AdvancementRewards");
+        final var requirements = vanilla.loadClass("net.minecraft.advancements.AdvancementRequirements");
+        final Object nativeValue = nativeAdvancement.getConstructor(java.util.Optional.class, java.util.Optional.class,
+                        rewards, java.util.Map.class, requirements, boolean.class)
+                .newInstance(java.util.Optional.empty(), java.util.Optional.empty(), rewards.getField("EMPTY").get(null),
+                        java.util.Map.of(), requirements.getConstructor(java.util.List.class).newInstance(java.util.List.of()), false);
+        final var identifier = vanilla.loadClass("net.minecraft.resources.Identifier");
+        final var holder = vanilla.loadClass("net.minecraft.advancements.AdvancementHolder");
+        final Object nativeHolder = holder.getConstructor(identifier, nativeAdvancement).newInstance(
+                identifier.getMethod("parse", String.class).invoke(null, "test:empty"), nativeValue);
+        final var positioned = vanilla.loadClass("net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket$PositionedAdvancement");
+        final Object decoded = verifyPair(vanilla, generated, registries, mapping, "SERIALIZER", retained, positioned,
+                positioned.getConstructor(holder, float.class, float.class).newInstance(nativeHolder, 12.5f, -4.75f));
+        assertEquals(12.5f, positioned.getMethod("x").invoke(decoded));
+        assertEquals(-4.75f, positioned.getMethod("y").invoke(decoded));
+    }
+
+    private static Object verifyPair(ClassLoader vanilla, ClassLoader generated, Object registries,
+                                     Class<?> retainedType, String serializerName, Object retained,
+                                     Class<?> nativeType, Object nativeValue) throws Exception {
+        final var buffer = generated.loadClass("net.minestom.server.network.NetworkBuffer");
+        final var type = generated.loadClass("net.minestom.server.network.NetworkBuffer$Type");
+        final var byteBuf = vanilla.loadClass("io.netty.buffer.ByteBuf");
+        final var unpooled = vanilla.loadClass("io.netty.buffer.Unpooled");
+        final var codecType = vanilla.loadClass("net.minecraft.network.codec.StreamCodec");
+        final var nativeBuffer = vanilla.loadClass("net.minecraft.network.RegistryFriendlyByteBuf")
+                .getConstructor(byteBuf, vanilla.loadClass("net.minecraft.core.RegistryAccess"));
+        final Object serializer = retainedType.getField(serializerName).get(null);
+        final Object codec = nativeType.getField("STREAM_CODEC").get(null);
+        final byte[] payload = (byte[]) buffer.getMethod("makeArray", type, Object.class).invoke(null, serializer, retained);
+        final Object input = nativeBuffer.newInstance(unpooled.getMethod("wrappedBuffer", byte[].class).invoke(null, (Object) payload), registries);
+        final Object output = nativeBuffer.newInstance(unpooled.getMethod("buffer").invoke(null), registries);
+        try {
+            final Object decoded = codecType.getMethod("decode", Object.class).invoke(codec, input);
+            assertEquals(0, byteBuf.getMethod("readableBytes").invoke(input));
+            codecType.getMethod("encode", Object.class, Object.class).invoke(codec, output, decoded);
+            assertArrayEquals(payload, bytes(byteBuf, output));
+            codecType.getMethod("encode", Object.class, Object.class).invoke(codec, output, nativeValue);
+            final byte[] nativePayload = bytes(byteBuf, output);
+            assertArrayEquals(payload, nativePayload);
+            final Object retainedInput = buffer.getMethod("wrap", byte[].class, int.class, int.class)
+                    .invoke(null, nativePayload, 0, nativePayload.length);
+            assertEquals(retained, type.getMethod("read", buffer).invoke(serializer, retainedInput));
+            assertEquals((long) payload.length, buffer.getMethod("readIndex").invoke(retainedInput));
+            return decoded;
+        } finally {
+            byteBuf.getMethod("release").invoke(input);
+            byteBuf.getMethod("release").invoke(output);
         }
     }
 

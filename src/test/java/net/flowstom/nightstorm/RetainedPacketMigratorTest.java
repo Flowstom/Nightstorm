@@ -274,78 +274,6 @@ class RetainedPacketMigratorTest {
     }
 
     @Test
-    void rewritesArbitraryFixedTextBooleanPayloadAndPreservesApiOrder() throws Exception {
-        final Path root = sourceRoot();
-        final Path source = root.resolve("src/main/java/example/GlyphEnvelope.java");
-        write(source, """
-                package example;
-
-                import java.util.List;
-
-                record GlyphEnvelope(Object anchor, boolean primary, List<String> glyphs) {
-                    static final NetworkBuffer.Type<GlyphEnvelope> SERIALIZER = new NetworkBuffer.Type<>() {
-                        public void write(NetworkBuffer buffer, GlyphEnvelope value) {
-                            buffer.write(ANCHOR, value.anchor());
-                            buffer.write(BOOLEAN, value.primary());
-                            buffer.write(STRING, value.glyphs().get(0));
-                            buffer.write(STRING, value.glyphs().get(1));
-                        }
-                        public GlyphEnvelope read(NetworkBuffer buffer) {
-                            return new GlyphEnvelope(buffer.read(ANCHOR), buffer.read(BOOLEAN), readGlyphs(buffer));
-                        }
-                    };
-                    private static List<String> readGlyphs(NetworkBuffer buffer) {
-                        return List.of(buffer.read(STRING), buffer.read(STRING));
-                    }
-                }
-                """);
-        final PacketMigrationScanner.Migration migration = semanticMigration("GlyphEnvelope",
-                PacketMigrationScanner.Kind.REORDERED_BOOLEAN_ENUM, 2, -1, false);
-
-        RetainedPacketMigrator.apply(root, List.of(migration));
-        final String migrated = Files.readString(source);
-        RetainedPacketMigrator.apply(root, List.of(migration));
-
-        assertEquals(migrated, Files.readString(source));
-        assertTrue(migrated.indexOf("value.glyphs().get(1)") < migrated.indexOf("value.primary() ? 1 : 0"));
-        assertTrue(migrated.contains("new GlyphEnvelope(objectValue, booleanValue, stringValues)"));
-        assertTrue(migrated.contains("List.of"));
-        assertTrue(migrated.contains("NetworkBuffer.VAR_INT"));
-        assertTrue(!migrated.contains("readGlyphs"));
-    }
-
-    @Test
-    void rewritesArbitraryNestedMotionPayloadAsLinearVariant() throws Exception {
-        final Path root = sourceRoot();
-        final Path source = root.resolve("src/main/java/example/TransitFrame.java");
-        write(source, """
-                package example;
-
-                record TransitFrame(int key, Object origin, Object drift, float azimuth, float elevation, boolean stable) {
-                    static final NetworkBuffer.Type<TransitFrame> SERIALIZER = NetworkBufferTemplate.template(
-                            VAR_INT, TransitFrame::key,
-                            VECTOR, TransitFrame::origin,
-                            VECTOR, TransitFrame::drift,
-                            FLOAT, TransitFrame::azimuth,
-                            FLOAT, TransitFrame::elevation,
-                            BOOLEAN, TransitFrame::stable,
-                            TransitFrame::new);
-                }
-                """);
-        final PacketMigrationScanner.Migration migration = semanticMigration("TransitFrame",
-                PacketMigrationScanner.Kind.LINEAR_POSITION_PATH, -1, 7, false);
-
-        RetainedPacketMigrator.apply(root, List.of(migration));
-        final String migrated = Files.readString(source);
-        RetainedPacketMigrator.apply(root, List.of(migration));
-
-        assertEquals(migrated, Files.readString(source));
-        assertTrue(migrated.contains("buffer.write(NetworkBuffer.VAR_INT, 7)"));
-        assertTrue(!migrated.contains("value.drift()"));
-        assertTrue(migrated.contains("Object component2 = component1"));
-    }
-
-    @Test
     void wrapsArbitrarySerializerForProvenAppendedPrimitive() throws Exception {
         final Path root = sourceRoot();
         final Path source = root.resolve("src/main/java/example/PulseNotice.java");
@@ -429,78 +357,11 @@ class RetainedPacketMigratorTest {
         RetainedPacketMigrator.apply(root, migrations);
 
         assertEquals(migrated, Files.readString(data));
-        assertEquals(4, occurrences(migrated, "BYTE_ARRAY.transform(java.util.BitSet::valueOf, java.util.BitSet::toByteArray)"));
+        assertEquals(4, occurrences(migrated, "BYTE_ARRAY.transform(BitSet::valueOf, BitSet::toByteArray)"));
         assertEquals(4, occurrences(migrated,
-                "NetworkBuffer.BYTE_ARRAY.transform(java.util.BitSet::valueOf, java.util.BitSet::toByteArray)"));
+                "NetworkBuffer.BYTE_ARRAY.transform(BitSet::valueOf, BitSet::toByteArray)"));
         assertTrue(!migrated.contains("BITSET, SectionData::"));
         assertTrue(!migrated.contains("NetworkBuffer.BITSET, SectionData::"));
-    }
-
-    @Test
-    void movesNestedDisplayPositionsToCollectionEntries() throws Exception {
-        final Path root = sourceRoot();
-        final Path source = root.resolve("src/main/java/example/AdvancementEnvelope.java");
-        write(source, """
-                package example;
-
-                import org.jetbrains.annotations.Nullable;
-
-                import java.util.List;
-
-                record AdvancementEnvelope(boolean reset, List<Mapping> mappings) {
-                    static final NetworkBuffer.Type<AdvancementEnvelope> SERIALIZER = NetworkBufferTemplate.template(
-                            NetworkBuffer.BOOLEAN, AdvancementEnvelope::reset,
-                            Mapping.SERIALIZER.list(), AdvancementEnvelope::mappings,
-                            AdvancementEnvelope::new);
-
-                    record Mapping(String key, Value value) {
-                        static final NetworkBuffer.Type<Mapping> SERIALIZER = NetworkBufferTemplate.template(
-                                NetworkBuffer.STRING, Mapping::key,
-                                Value.SERIALIZER, Mapping::value,
-                                Mapping::new);
-                    }
-
-                    record Value(@Nullable Display display) {
-                        static final NetworkBuffer.Type<Value> SERIALIZER = NetworkBufferTemplate.template(
-                                Display.SERIALIZER.optional(), Value::display, Value::new);
-                    }
-
-                    record Display(String title, float x, float y) {
-                        static final NetworkBuffer.Type<Display> SERIALIZER = new NetworkBuffer.Type<>() {
-                            public void write(NetworkBuffer buffer, Display value) {
-                                buffer.write(NetworkBuffer.STRING, value.title);
-                                buffer.write(NetworkBuffer.FLOAT, value.x);
-                                buffer.write(NetworkBuffer.FLOAT, value.y);
-                            }
-
-                            public Display read(NetworkBuffer buffer) {
-                                var title = buffer.read(NetworkBuffer.STRING);
-                                var x = buffer.read(NetworkBuffer.FLOAT);
-                                var y = buffer.read(NetworkBuffer.FLOAT);
-                                return new Display(title, x, y);
-                            }
-                        };
-                    }
-                }
-                """);
-        final PacketMigrationScanner.Migration migration = new PacketMigrationScanner.Migration(
-                new PacketUpdater.RetainedPacket("AdvancementEnvelope", "AdvancementEnvelope.SERIALIZER",
-                        "before", "after"),
-                PacketMigrationScanner.Kind.MOVED_NESTED_FLOATS, List.of(1), Map.of(), "", -1, -1, false);
-
-        RetainedPacketMigrator.apply(root, List.of(migration));
-        final String migrated = Files.readString(source);
-        RetainedPacketMigrator.apply(root, List.of(migration));
-
-        assertEquals(migrated, Files.readString(source));
-        assertTrue(migrated.contains("positionCompatibilityDelegate"));
-        assertTrue(migrated.contains("import org.jetbrains.annotations.Nullable;"));
-        assertTrue(migrated.contains("positionedValue == null ? 0.0f : positionedValue.x()"));
-        assertTrue(migrated.contains("new Display(positionedValue.title(), position0, position1)"));
-        assertTrue(migrated.contains("return new Mapping(value.key(), adjustedNested)"));
-        assertTrue(!migrated.contains("buffer.write(NetworkBuffer.FLOAT, value.x)"));
-        assertTrue(!migrated.contains("var x = buffer.read(NetworkBuffer.FLOAT)"));
-        assertTrue(migrated.contains("new Display(title, 0.0f, 0.0f)"));
     }
 
     private static Path sourceRoot() throws Exception {

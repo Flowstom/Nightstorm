@@ -214,7 +214,7 @@ class PacketMigrationScannerTest {
     }
 
     @Test
-    void detectsReorderedBooleanEnumAndDerivesSemanticIds() throws Exception {
+    void rejectsUnboundManualBooleanListEvidence() throws Exception {
         final String side = "synthetic/wire/Direction";
         final List<Component> baselineComponents = List.of(
                 component("anchor", "Lsynthetic/wire/Anchor;", null),
@@ -231,12 +231,7 @@ class PacketMigrationScannerTest {
         targetClasses.put(side, binaryEnumClass(side, "UNRELATED", 17, "ANOTHER", 42));
         targetClasses.put("synthetic/wire/Consumer", booleanConsumer(side, "side", "UNRELATED", false));
 
-        final PacketMigrationScanner.Migration migration = scan(baseline, jar(targetClasses)).getFirst();
-
-        assertEquals(PacketMigrationScanner.Kind.REORDERED_BOOLEAN_ENUM, migration.kind());
-        assertEquals(4, migration.fixedSize());
-        assertEquals(42, migration.falseId());
-        assertEquals(17, migration.trueId());
+        assertThrows(IllegalStateException.class, () -> scan(baseline, jar(targetClasses)));
     }
 
     @Test
@@ -257,7 +252,7 @@ class PacketMigrationScannerTest {
     }
 
     @Test
-    void detectsLinearPositionPathAndDiscriminator() throws Exception {
+    void rejectsDispatchCatalogWithoutBoundPayloadSchemas() throws Exception {
         final String nested = "synthetic/wire/LegacyPath";
         final String union = "synthetic/wire/PathUnion";
         final String variant = "synthetic/wire/LinearPath";
@@ -278,10 +273,7 @@ class PacketMigrationScannerTest {
         targetClasses.put(variant, recordClass(variant,
                 List.of(component("point", "L" + point + ";", null)), false));
 
-        final PacketMigrationScanner.Migration migration = scan(jar(baselineClasses), jar(targetClasses)).getFirst();
-
-        assertEquals(PacketMigrationScanner.Kind.LINEAR_POSITION_PATH, migration.kind());
-        assertEquals(7, migration.discriminator());
+        assertThrows(IllegalStateException.class, () -> scan(jar(baselineClasses), jar(targetClasses)));
     }
 
     @Test
@@ -348,7 +340,7 @@ class PacketMigrationScannerTest {
     }
 
     @Test
-    void detectsNestedFloatPairMovedToCollectionWrapper() throws Exception {
+    void rejectsMovedFieldCountsWithoutReaderProvenance() throws Exception {
         final String holder = "synthetic/wire/Holder";
         final String wrapper = "synthetic/wire/PositionedHolder";
         final String display = "synthetic/wire/Display";
@@ -369,10 +361,7 @@ class PacketMigrationScannerTest {
         target.put(wrapper, compositeCodecRecord(wrapper, wrapperComponents));
         target.put(display, manualPositionClass(display, false));
 
-        final PacketMigrationScanner.Migration migration = scan(jar(baseline), jar(target)).getFirst();
-
-        assertEquals(PacketMigrationScanner.Kind.MOVED_NESTED_FLOATS, migration.kind());
-        assertEquals(List.of(0), migration.path());
+        assertThrows(IllegalStateException.class, () -> scan(jar(baseline), jar(target)));
     }
 
     @Test

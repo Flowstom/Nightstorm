@@ -34,6 +34,7 @@ final class IntegrationInstaller {
                 .toList(), "generator output Path").getNameAsString();
         installer.finish(main, "SynchronizedRegistryGenerator", "generate(\"synchronized_registries\", new SynchronizedRegistryGenerator());");
         installer.finish(main, "EnumDataAccess", "EnumDataAccess.save();");
+        installer.finish(main, "ScalarDataAccess", "ScalarDataAccess.save();");
         installer.finish(main, "NightstormDataNormalizer", "NightstormDataNormalizer.normalizeFromEnvironment(" + output + ");");
 
         for (var unit : installer.units.values()) {
@@ -43,18 +44,9 @@ final class IntegrationInstaller {
                         && List.of("createWorldLookup", "createLookup").contains(call.getNameAsString())
                         && imported(unit, "net.minecraft.data.registries.VanillaRegistries")) {
                     call.replace(installer.expression("MinecraftCompatibility.vanillaLookup()"));
-                } else if (List.of("blocksMotion", "isSolid").contains(call.getNameAsString()) && call.getArguments().isEmpty()
-                        && call.getScope().isPresent() && unit.getImports().stream()
-                        .anyMatch(value -> value.getNameAsString().equals("net.minecraft.world.level.block.state.BlockState"))) {
-                    // Match the receiver's declared type, rather than a local variable spelling.
-                    String receiver = call.getScope().get().toString();
-                    boolean blockState = unit.findAll(com.github.javaparser.ast.body.Parameter.class).stream()
-                            .anyMatch(value -> value.getNameAsString().equals(receiver) && value.getType().asString().equals("BlockState"))
-                            || unit.findAll(com.github.javaparser.ast.body.VariableDeclarator.class).stream()
-                            .anyMatch(value -> value.getNameAsString().equals(receiver) && value.getType().asString().equals("BlockState"));
-                    if (blockState) call.replace(installer.expression("MinecraftCompatibility.blocksMotion(" + receiver + ")"));
                 }
             }
+            installer.wrapScalarAccess(unit);
             wrapEnumAccess(unit);
         }
         installer.appendRegistryHook(registries, "registryDataPacket", "appendPackets", true);
@@ -69,7 +61,7 @@ final class IntegrationInstaller {
         Path generatorPackage = installer.file(dataGen.findCompilationUnit().orElseThrow()).getParent();
         generatorPackage = generatorPackage.getParent().resolve("generators");
         Files.createDirectories(generatorPackage);
-        for (String name : List.of("MinecraftCompatibility", "NightstormDataNormalizer", "EnumDataAccess")) {
+        for (String name : List.of("MinecraftCompatibility", "NightstormDataNormalizer", "DataMigration", "EnumDataAccess", "ScalarDataAccess", "ScalarProgram")) {
             Files.copy(templates.resolve("data-generator/" + name + ".java"), generatorPackage.resolve(name + ".java"),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
@@ -131,6 +123,57 @@ final class IntegrationInstaller {
         var replacement = new MethodCallExpr(new NameExpr("NightstormRegistryData"), hook, arguments);
         var block = loop.getParentNode().filter(BlockStmt.class::isInstance).map(BlockStmt.class::cast).orElseThrow();
         block.getStatements().add(block.getStatements().indexOf(loop) + 1, new ExpressionStmt(replacement));
+    }
+
+    private void wrapScalarAccess(CompilationUnit unit) {
+        var types = new java.util.LinkedHashSet<String>();
+        for (var call : List.copyOf(unit.findAll(MethodCallExpr.class))) {
+            if (call.getArguments().size() < 2 || !(call.getArguments().getLast().orElseThrow() instanceof ClassExpr scalar)
+                    || !scalar.getType().isPrimitiveType()) continue;
+            for (Expression argument : List.copyOf(call.getArguments())) {
+                if (!(argument instanceof MethodCallExpr getter) || !getter.getArguments().isEmpty()
+                        || !(getter.getScope().orElse(null) instanceof NameExpr receiver)) continue;
+                var method = call.findAncestor(MethodDeclaration.class).orElse(null);
+                if (method == null) continue;
+                var parameter = method.getParameters().stream().filter(p -> p.getNameAsString().equals(receiver.getNameAsString())).findFirst();
+                if (parameter.isEmpty()) continue;
+                String type = parameter.get().getType().asString();
+                // A typed iteration domain is required before wrapping any getter.
+                if (unit.findAll(ForEachStmt.class).stream().noneMatch(loop -> loop.getVariable().getVariable(0).getType().asString().equals(type))) continue;
+                types.add(type);
+                getter.replace(new MethodCallExpr(new NameExpr("ScalarDataAccess"), "read", new NodeList<>(
+                        receiver.clone(), new StringLiteralExpr(getter.getNameAsString()), scalar.clone())));
+            }
+        }
+        for (String type : types) {
+            var loop = unique(unit.findAll(ForEachStmt.class).stream()
+                    .filter(value -> value.getVariable().getVariable(0).getType().asString().equals(type)).toList(), "scalar domain for " + type);
+            Expression domain = loop.getIterable().clone();
+            var parent = loop.findAncestor(ForEachStmt.class);
+            while (parent.isPresent()) {
+                var outer = parent.get();
+                Expression iterable = outer.getIterable().clone();
+                if (iterable instanceof NameExpr local) {
+                    var declaration = unique(outer.findAncestor(MethodDeclaration.class).orElseThrow()
+                            .findAll(com.github.javaparser.ast.body.VariableDeclarator.class).stream()
+                            .filter(v -> v.getNameAsString().equals(local.getNameAsString())).toList(), "domain iterable " + local);
+                    iterable = declaration.getInitializer().orElseThrow().clone();
+                }
+                String variable = outer.getVariable().getVariable(0).getNameAsString();
+                domain = expression("java.util.stream.StreamSupport.stream(" + iterable
+                        + ".spliterator(), false).flatMap(" + variable + " -> java.util.stream.StreamSupport.stream("
+                        + domain + ".spliterator(), false)).toList()");
+                parent = outer.findAncestor(ForEachStmt.class);
+            }
+            var method = loop.findAncestor(MethodDeclaration.class).orElseThrow();
+            String statement = "ScalarDataAccess.domain(" + type + ".class, () -> " + domain + ");";
+            if (method.findAll(MethodCallExpr.class).stream().noneMatch(c -> c.getNameAsString().equals("domain")
+                    && c.getScope().map(Object::toString).orElse("").equals("ScalarDataAccess")
+                    && !c.getArguments().isEmpty() && c.getArgument(0).toString().equals(type + ".class"))) {
+                method.getBody().orElseThrow().addStatement(0, parser.parseStatement(statement).getResult().orElseThrow());
+            }
+            unit.addImport("net.minestom.generators.ScalarDataAccess");
+        }
     }
 
     static void wrapEnumAccess(CompilationUnit unit) {
