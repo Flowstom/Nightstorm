@@ -132,7 +132,30 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
             if (booleanIds == null && codec.supported() && !codec.vanillaDescriptor().equals(component.descriptor())) return Optional.empty();
             bindings.add(new Binding(field.component(), source, javaType, networkType, constant));
         }
+        // A boolean whose proved ids are the two boolean bytes needs no payload rewrite when every other field stays put.
+        if (indexAligned(bindings, baseline, target)) return Optional.empty();
         return Optional.of(new WireMigration(baseline, target, bindings));
+    }
+
+    private static boolean indexAligned(List<Binding> bindings, WireSchema baseline, WireSchema target) {
+        if (bindings.size() != target.fields().size() || baseline.components().size() != target.components().size()) return false;
+        var baselineCodecs = new HashMap<Integer, WireSchema.Codec>();
+        var targetCodecs = new HashMap<Integer, WireSchema.Codec>();
+        baseline.fields().forEach(field -> baselineCodecs.put(field.component(), field.codec()));
+        target.fields().forEach(field -> targetCodecs.put(field.component(), field.codec()));
+        var order = new ArrayList<Integer>();
+        var seen = new HashSet<Integer>();
+        for (var binding : bindings) {
+            order.add(binding.component());
+            if (binding.constant() != null || binding.source() < 0 || binding.source() != binding.component()
+                    || !seen.add(binding.source())) return false;
+            boolean booleanBytes = binding.networkType().equals(CodecChange.bool(0, 1).expression());
+            var before = baselineCodecs.get(binding.source());
+            var after = targetCodecs.get(binding.component());
+            if (!booleanBytes && (before == null || after == null || !before.equals(after))) return false;
+        }
+        var baselineOrder = baseline.fields().stream().map(WireSchema.Field::component).toList();
+        return seen.size() == baseline.components().size() && order.equals(baselineOrder);
     }
 
     static boolean compatibleEncoding(WireSchema.Codec before, WireSchema.Codec after) {

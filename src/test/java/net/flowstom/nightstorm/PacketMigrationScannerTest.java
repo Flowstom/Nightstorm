@@ -392,6 +392,196 @@ class PacketMigrationScannerTest {
         assertThrows(IllegalStateException.class, () -> scan(baseline, jar(reversed)));
     }
 
+    @Test
+    void provesBooleanEnumPolarityFromASharedConstructorArgument() throws Exception {
+        final String choice = "synthetic/wire/Choice";
+        final Map<String, byte[]> baseline = constructorPolarity(null, 0, 1);
+        final Map<String, byte[]> aligned = constructorPolarity(choice, 0, 1);
+        final Map<String, byte[]> reversed = constructorPolarity(choice, 1, 0);
+
+        assertEquals(List.of(), scan(jar(baseline), jar(aligned)));
+        var migration = scan(jar(baseline), jar(reversed)).getFirst();
+        assertEquals(PacketMigrationScanner.Kind.CODEC_REWRITE, migration.kind());
+        org.junit.jupiter.api.Assertions.assertTrue(migration.codec().expression().contains("value ? 0 : 1"));
+
+        aligned.remove("synthetic/wire/Holder");
+        reversed.remove("synthetic/wire/Holder");
+        assertThrows(IllegalStateException.class, () -> scan(jar(baseline), jar(aligned)));
+    }
+
+    private static Map<String, byte[]> constructorPolarity(String enumOwner, int lowId, int highId) {
+        final boolean old = enumOwner == null;
+        final String type = old ? "Z" : "L" + enumOwner + ";";
+        final var classes = new LinkedHashMap<String, byte[]>();
+        classes.put(RECORD, old ? booleanPacket() : enumPacket(enumOwner));
+        if (!old) classes.put(enumOwner, binaryEnumClass(enumOwner, "LOW", lowId, "HIGH", highId));
+        classes.put("synthetic/wire/Base", emptySend("synthetic/wire/Base", "java/lang/Object", type));
+        classes.put("synthetic/wire/Sender", sender(type));
+        classes.put("synthetic/wire/Bridge", bridge(type));
+        classes.put("synthetic/wire/Flow", flow(old));
+        classes.put("synthetic/wire/Holder", holder(enumOwner));
+        return classes;
+    }
+
+    private static byte[] booleanPacket() {
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, RECORD, null, "java/lang/Object", null);
+        writer.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "flag", "Z", null, null).visitEnd();
+        var init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "(Z)V", null, null);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitVarInsn(Opcodes.ILOAD, 1);
+        init.visitFieldInsn(Opcodes.PUTFIELD, RECORD, "flag", "Z");
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(0, 0);
+        init.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] enumPacket(String enumOwner) {
+        final String descriptor = "L" + enumOwner + ";";
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_RECORD, RECORD, null, "java/lang/Record", null);
+        writer.visitRecordComponent("choice", descriptor, null).visitEnd();
+        var init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "(" + descriptor + ")V", null, null);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Record", "<init>", "()V", false);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitVarInsn(Opcodes.ALOAD, 1);
+        init.visitFieldInsn(Opcodes.PUTFIELD, RECORD, "choice", descriptor);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(0, 0);
+        init.visitEnd();
+        var clinit = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        clinit.visitFieldInsn(Opcodes.GETSTATIC, enumOwner, "STREAM_CODEC", STREAM_CODEC);
+        clinit.visitInvokeDynamicInsn("apply", "()Ljava/util/function/Function;",
+                new Handle(Opcodes.H_INVOKESTATIC, "synthetic/bootstrap/Factory", "bootstrap", "()V", false),
+                new Handle(Opcodes.H_INVOKEVIRTUAL, RECORD, "choice", "()" + descriptor, false));
+        clinit.visitInsn(Opcodes.RETURN);
+        clinit.visitMaxs(0, 0);
+        clinit.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] emptySend(String owner, String superName, String argument) {
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, owner, null, superName, null);
+        var init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, superName, "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(0, 0);
+        init.visitEnd();
+        var send = writer.visitMethod(Opcodes.ACC_PUBLIC, "send", "(" + argument + ")V", null, null);
+        send.visitInsn(Opcodes.RETURN);
+        send.visitMaxs(0, 0);
+        send.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] sender(String argument) {
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, "synthetic/wire/Sender", null, "synthetic/wire/Base", null);
+        var init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "synthetic/wire/Base", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(0, 0);
+        init.visitEnd();
+        var send = writer.visitMethod(Opcodes.ACC_PUBLIC, "send", "(" + argument + ")V", null, null);
+        send.visitTypeInsn(Opcodes.NEW, RECORD);
+        send.visitInsn(Opcodes.DUP);
+        send.visitVarInsn(argument.equals("Z") ? Opcodes.ILOAD : Opcodes.ALOAD, 1);
+        send.visitMethodInsn(Opcodes.INVOKESPECIAL, RECORD, "<init>", "(" + argument + ")V", false);
+        send.visitInsn(Opcodes.POP);
+        send.visitInsn(Opcodes.RETURN);
+        send.visitMaxs(0, 0);
+        send.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] bridge(String argument) {
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, "synthetic/wire/Bridge", null, "java/lang/Object", null);
+        var init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(0, 0);
+        init.visitEnd();
+        var open = writer.visitMethod(Opcodes.ACC_PUBLIC, "open", "(Lsynthetic/wire/Base;" + argument + ")V", null, null);
+        open.visitVarInsn(Opcodes.ALOAD, 1);
+        open.visitVarInsn(argument.equals("Z") ? Opcodes.ILOAD : Opcodes.ALOAD, 2);
+        open.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "synthetic/wire/Base", "send", "(" + argument + ")V", false);
+        open.visitInsn(Opcodes.RETURN);
+        open.visitMaxs(0, 0);
+        open.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] flow(boolean old) {
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, "synthetic/wire/Flow", null, "java/lang/Object", null);
+        var use = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "use",
+                "(Lsynthetic/wire/Bridge;Lsynthetic/wire/Base;)V", null, null);
+        use.visitMethodInsn(Opcodes.INVOKESTATIC, "synthetic/wire/Holder", old ? "flag" : "choice",
+                old ? "()Z" : "()Lsynthetic/wire/Choice;", false);
+        use.visitVarInsn(old ? Opcodes.ISTORE : Opcodes.ASTORE, 2);
+        use.visitVarInsn(old ? Opcodes.ILOAD : Opcodes.ALOAD, 2);
+        use.visitMethodInsn(Opcodes.INVOKESTATIC, "synthetic/wire/Holder", "react",
+                old ? "(Z)V" : "(Lsynthetic/wire/Choice;)V", false);
+        use.visitVarInsn(Opcodes.ALOAD, 0);
+        use.visitVarInsn(Opcodes.ALOAD, 1);
+        use.visitVarInsn(old ? Opcodes.ILOAD : Opcodes.ALOAD, 2);
+        use.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "synthetic/wire/Bridge", "open",
+                old ? "(Lsynthetic/wire/Base;Z)V" : "(Lsynthetic/wire/Base;Lsynthetic/wire/Choice;)V", false);
+        use.visitInsn(Opcodes.RETURN);
+        use.visitMaxs(0, 0);
+        use.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] holder(String enumOwner) {
+        final boolean old = enumOwner == null;
+        final String type = old ? "Z" : "L" + enumOwner + ";";
+        final var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V25, Opcodes.ACC_PUBLIC, "synthetic/wire/Holder", null, "java/lang/Object", null);
+        var produced = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, old ? "flag" : "choice", "()" + type, null, null);
+        if (old) produced.visitInsn(Opcodes.ICONST_0);
+        else produced.visitFieldInsn(Opcodes.GETSTATIC, enumOwner, "LOW", type);
+        produced.visitInsn(old ? Opcodes.IRETURN : Opcodes.ARETURN);
+        produced.visitMaxs(0, 0);
+        produced.visitEnd();
+        var react = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "react", "(" + type + ")V", null, null);
+        react.visitVarInsn(old ? Opcodes.ILOAD : Opcodes.ALOAD, 0);
+        react.visitMethodInsn(Opcodes.INVOKESTATIC, "synthetic/wire/Holder", "select", "(" + type + ")I", false);
+        react.visitInsn(Opcodes.POP);
+        react.visitInsn(Opcodes.RETURN);
+        react.visitMaxs(0, 0);
+        react.visitEnd();
+        var select = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "select", "(" + type + ")I", null, null);
+        var low = new org.objectweb.asm.Label();
+        select.visitVarInsn(old ? Opcodes.ILOAD : Opcodes.ALOAD, 0);
+        if (!old) select.visitFieldInsn(Opcodes.GETSTATIC, enumOwner, "HIGH", type);
+        select.visitJumpInsn(old ? Opcodes.IFEQ : Opcodes.IF_ACMPNE, low);
+        select.visitIntInsn(Opcodes.BIPUSH, 20);
+        select.visitInsn(Opcodes.IRETURN);
+        select.visitLabel(low);
+        select.visitIntInsn(Opcodes.BIPUSH, 10);
+        select.visitInsn(Opcodes.IRETURN);
+        select.visitMaxs(0, 0);
+        select.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
     private static byte[] booleanConsumer(String enumOwner, String accessor, String trueConstant, boolean transformed) {
         final String owner = "synthetic/wire/Consumer";
         final String type = enumOwner == null ? "Z" : "L" + enumOwner + ";";
