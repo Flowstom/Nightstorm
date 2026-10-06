@@ -82,6 +82,22 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
             int source = -1;
             String constant = null;
             String javaType = codec.javaType(), networkType = codec.networkType();
+            Integer nullableSource = value == null
+                    ? WireCanonical.nullableByteSource(baseline, oldCodecs, component, field.codec()) : null;
+            if (nullableSource != null) {
+                Map<String, Integer> ids = null;
+                try {
+                    ClassNode enumeration = classes.apply(field.codec().owner());
+                    if (enumeration != null) ids = PacketMigrationScanner.enumIds(enumeration);
+                } catch (RuntimeException exception) {
+                    ids = null;
+                }
+                if (ids == null || ids.isEmpty()) return Optional.empty();
+                used.add(nullableSource);
+                bindings.add(new Binding(field.component(), nullableSource, "",
+                        CodecChange.enumeration("NetworkBuffer.OPTIONAL_VAR_INT", ids, true).expression(), null));
+                continue;
+            }
             if (value instanceof ConstructorMapping.Parameter parameter) {
                 source = parameter.index();
                 boolean container = parameter.descriptor().startsWith("[") && component.descriptor().equals("Ljava/util/List;");
