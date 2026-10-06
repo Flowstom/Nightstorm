@@ -31,13 +31,15 @@ gradle.beforeProject { project ->
                 }
                 def vanilla = candidates.first()
                 if (vanilla.canonicalFile == baselineFile.canonicalFile) return
-                project.exec {
-                    commandLine binary, 'relocate-generator-apis',
-                            '--generator', project.projectDir.absolutePath,
-                            '--baseline-jar', baselineFile.absolutePath,
-                            '--jar', vanilla.absolutePath,
-                            '--output', proof
-                }
+                def process = new ProcessBuilder(binary, 'relocate-generator-apis',
+                        '--generator', project.projectDir.absolutePath,
+                        '--baseline-jar', baselineFile.absolutePath,
+                        '--jar', vanilla.absolutePath,
+                        '--output', proof).redirectErrorStream(true).start()
+                def output = process.inputStream.text
+                int status = process.waitFor()
+                if (!output.isBlank()) println output
+                if (status != 0) throw new GradleException('Generator API relocation failed:\n' + output)
             }
         }
         project.tasks.withType(JavaCompile).configureEach {
