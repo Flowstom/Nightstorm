@@ -87,6 +87,25 @@ class GeneratorApiRelocationTest {
     }
 
     @Test
+    void ignoresCallsWhoseOverloadsAreNotTheRelocatedType() throws Exception {
+        var baseline = jar("baseline.jar", baselineSources());
+        var target = jar("target.jar", targetSources(true));
+        var generator = sources();
+        write(generator.resolve("src/Other.java"), """
+                package net.minestom.generators;
+                import sample.Lookup;
+                public class Other {
+                    public static Object peek(Lookup lookup, String name) {
+                        return lookup.lookupOrThrow(name);
+                    }
+                }
+                """);
+        String original = Files.readString(generator.resolve("src/Other.java"));
+        assertEquals(List.of("sample.Tone"), GeneratorApiRelocation.relocate(generator, baseline, target, root.resolve("proof.json")));
+        assertEquals(original, Files.readString(generator.resolve("src/Other.java")));
+    }
+
+    @Test
     void leavesSourceUnchangedWhenTheTypeStillExists() throws Exception {
         var sources = baselineSources();
         var baseline = jar("baseline.jar", sources);
@@ -244,6 +263,13 @@ class GeneratorApiRelocationTest {
                     private final Id id;
                     public Note(Id id) { this.id = id; }
                     public Id location() { return id; }
+                }
+                """));
+        sources.add(source("sample/Lookup.java", """
+                package sample;
+                public final class Lookup {
+                    public String lookupOrThrow(String name) { return name; }
+                    public Object lookupOrThrow(Object name) { return name; }
                 }
                 """));
         return sources;

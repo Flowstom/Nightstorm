@@ -82,7 +82,7 @@ final class GeneratorApiRelocation {
                 : resolve(type, catalog.identity(), catalog.value(), provider(units, target), target);
         for (Call call : usage.accessors()) {
             var owner = findType(call.receiver(), baseline);
-            var original = findMethod(owner, call.method(), call.arguments(), baseline);
+            var original = findMethod(owner, call.method(), call.arguments(), baseline, Set.of(type));
             if (original == null || !original.type().raw().equals(type)) {
                 fail(type, "cannot find " + call.receiver() + "." + call.method() + " in the baseline jar");
             }
@@ -280,7 +280,7 @@ final class GeneratorApiRelocation {
 
     private static boolean rewrite(Parsed unit, Set<String> vanished, Map<String, ClassModel> baseline, Set<String> proved) {
         var resolver = new Resolver(unit.unit(), baseline);
-        var locals = locals(unit.unit(), resolver, baseline);
+        var locals = locals(unit.unit(), resolver, baseline, vanished);
         var edits = new ArrayList<Edit>();
         for (ClassExpr expr : unit.unit().findAll(ClassExpr.class)) {
             String name = resolver.typeName(expr.getType());
@@ -299,7 +299,7 @@ final class GeneratorApiRelocation {
             if (vanished.contains(name)) fail(name, "unsupported construction");
         }
         for (FieldAccessExpr access : unit.unit().findAll(FieldAccessExpr.class)) {
-            String owner = expressionType(access.getScope(), locals, resolver, baseline);
+            String owner = expressionType(access.getScope(), locals, resolver, baseline, vanished);
             if (!vanished.contains(owner)) {
                 if (access.getScope() instanceof NameExpr name && !locals.containsKey(name.getNameAsString())
                         && vanished.contains(resolver.simple(name.getNameAsString()))) {
@@ -312,7 +312,7 @@ final class GeneratorApiRelocation {
         }
         for (MethodCallExpr call : unit.unit().findAll(MethodCallExpr.class)) {
             if (call.getScope().isEmpty()) continue;
-            String owner = expressionType(call.getScope().get(), locals, resolver, baseline);
+            String owner = expressionType(call.getScope().get(), locals, resolver, baseline, vanished);
             if (vanished.contains(owner)) {
                 if (call.getNameAsString().equals("equals") && call.getArguments().size() == 1) {
                     Expression argument = call.getArgument(0);
@@ -326,7 +326,7 @@ final class GeneratorApiRelocation {
                 continue;
             }
             if (owner == null) continue;
-            var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline);
+            var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline, vanished);
             if (method != null && vanished.contains(method.type().raw())) {
                 String returned = method.type().raw();
                 if (!proved.contains(returned)) fail(returned, "call " + call.getNameAsString() + " was not proved");
@@ -369,17 +369,17 @@ final class GeneratorApiRelocation {
         return expression("((" + member.type().raw().replace('$', '.') + ") ApiRelocation.read(\"" + owner + "\", " + receiver + ", \"" + member.name() + "\"))");
     }
 
-    private static String expressionType(Expression expression, Map<String, String> locals, Resolver resolver, Map<String, ClassModel> baseline) {
+    private static String expressionType(Expression expression, Map<String, String> locals, Resolver resolver, Map<String, ClassModel> baseline, Set<String> vanished) {
         if (expression instanceof NameExpr name) return locals.get(name.getNameAsString());
         if (expression instanceof CastExpr cast) return resolver.typeName(cast.getType());
         if (expression instanceof MethodCallExpr call && call.getScope().isPresent()) {
-            String owner = expressionType(call.getScope().get(), locals, resolver, baseline);
+            String owner = expressionType(call.getScope().get(), locals, resolver, baseline, vanished);
             if (owner == null) return null;
-            var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline);
+            var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline, vanished);
             return method == null ? null : method.type().raw();
         }
         if (expression instanceof FieldAccessExpr access) {
-            String owner = expressionType(access.getScope(), locals, resolver, baseline);
+            String owner = expressionType(access.getScope(), locals, resolver, baseline, vanished);
             if (owner == null) return null;
             try {
                 return member(baseline.get(owner), access.getNameAsString(), true).type().raw();
@@ -390,7 +390,7 @@ final class GeneratorApiRelocation {
         return null;
     }
 
-    private static Map<String, String> locals(CompilationUnit unit, Resolver resolver, Map<String, ClassModel> baseline) {
+    private static Map<String, String> locals(CompilationUnit unit, Resolver resolver, Map<String, ClassModel> baseline, Set<String> vanished) {
         var locals = new HashMap<String, String>();
         for (MethodDeclaration method : unit.findAll(MethodDeclaration.class)) {
             for (var parameter : method.getParameters()) {
@@ -401,7 +401,7 @@ final class GeneratorApiRelocation {
         for (VariableDeclarator variable : unit.findAll(VariableDeclarator.class)) {
             String name = resolver.typeName(variable.getType());
             if ("var".equals(variable.getType().asString()) && variable.getInitializer().isPresent()) {
-                name = expressionType(variable.getInitializer().get(), locals, resolver, baseline);
+                name = expressionType(variable.getInitializer().get(), locals, resolver, baseline, vanished);
             }
             if (name != null) locals.put(variable.getNameAsString(), name);
         }
@@ -413,20 +413,20 @@ final class GeneratorApiRelocation {
         for (String type : vanished) usage.byType.put(type, new Usage(new HashSet<>(), new HashSet<>(), new ArrayList<>()));
         for (Parsed parsed : units) {
             var resolver = new Resolver(parsed.unit(), baseline);
-            var locals = locals(parsed.unit(), resolver, baseline);
+            var locals = locals(parsed.unit(), resolver, baseline, vanished);
             for (FieldAccessExpr access : parsed.unit().findAll(FieldAccessExpr.class)) {
-                String owner = expressionType(access.getScope(), locals, resolver, baseline);
+                String owner = expressionType(access.getScope(), locals, resolver, baseline, vanished);
                 if (vanished.contains(owner)) usage.byType.get(owner).fields().add(access.getNameAsString());
             }
             for (MethodCallExpr call : parsed.unit().findAll(MethodCallExpr.class)) {
                 if (call.getScope().isEmpty()) continue;
-                String owner = expressionType(call.getScope().get(), locals, resolver, baseline);
+                String owner = expressionType(call.getScope().get(), locals, resolver, baseline, vanished);
                 if (vanished.contains(owner)) {
                     if (!call.getNameAsString().equals("equals")) usage.byType.get(owner).methods().add(call.getNameAsString());
                     continue;
                 }
                 if (owner == null) continue;
-                var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline);
+                var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline, vanished);
                 if (method != null && vanished.contains(method.type().raw())) {
                     usage.byType.get(method.type().raw()).accessors().add(new Call(owner, call.getNameAsString(), call.getArguments().size()));
                 }
@@ -464,8 +464,8 @@ final class GeneratorApiRelocation {
         return fail(model.name(), (field ? "field " : "method ") + name + " is missing");
     }
 
-    private static Member findMethod(ClassModel owner, String name, int arguments, Map<String, ClassModel> classes) {
-        Member found = null;
+    private static Member findMethod(ClassModel owner, String name, int arguments, Map<String, ClassModel> classes, Set<String> vanished) {
+        var matches = new ArrayList<Member>();
         var visited = new HashSet<String>();
         var pending = new ArrayDeque<String>();
         if (owner != null) pending.add(owner.name());
@@ -476,13 +476,18 @@ final class GeneratorApiRelocation {
             if (model == null) continue;
             for (Member method : model.methods()) {
                 if (method.field() || method.isStatic() || method.bridge() || !method.name().equals(name) || method.parameters().size() != arguments) continue;
-                if (found != null && !found.type().equals(method.type())) return fail(owner.name(), "ambiguous method " + name);
-                found = method;
+                matches.add(method);
             }
             if (model.superName() != null) pending.add(model.superName());
             pending.addAll(model.interfaces());
         }
-        return found;
+        var byReturn = new LinkedHashMap<String, Member>();
+        for (Member match : matches) byReturn.putIfAbsent(match.type().raw(), match);
+        if (byReturn.size() == 1) return byReturn.values().iterator().next();
+        var relevant = byReturn.entrySet().stream().filter(entry -> vanished.contains(entry.getKey())).map(Map.Entry::getValue).toList();
+        if (relevant.size() == 1) return relevant.getFirst();
+        if (relevant.isEmpty()) return null;
+        return fail(owner.name(), "ambiguous method " + name);
     }
 
     private static ClassModel findType(String name, Map<String, ClassModel> classes) {
