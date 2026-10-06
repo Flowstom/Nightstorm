@@ -97,11 +97,30 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                                                  java.util.function.Function<String, ClassNode> classes) {
         for (MethodNode method : node.methods) {
             if (!method.name.equals("<clinit>")) continue;
+            var body = new ArrayList<AbstractInsnNode>();
+            for (AbstractInsnNode instruction : method.instructions) if (instruction.getOpcode() >= 0) body.add(instruction);
+            int start = 0;
+            for (int end = 0; end < body.size(); end++) {
+                if (!(body.get(end) instanceof FieldInsnNode stored) || stored.getOpcode() != Opcodes.PUTSTATIC) continue;
+                if (stored.owner.equals(node.name) && stored.name.equals("STREAM_CODEC")
+                        && body.subList(start, end + 1).stream().noneMatch(JumpInsnNode.class::isInstance)) {
+                    var parsed = compositeWindow(node, components, classes, body.subList(start, end + 1));
+                    if (parsed.isPresent()) return parsed;
+                }
+                start = end + 1;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Parses one static initializer, from the previous store through this {@code STREAM_CODEC} store. */
+    private static Optional<WireSchema> compositeWindow(ClassNode node, List<Component> components,
+                                                        java.util.function.Function<String, ClassNode> classes,
+                                                        List<AbstractInsnNode> body) {
             var fields = new ArrayList<Field>();
             var operands = new ArrayList<Object>();
             boolean composed = false;
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction.getOpcode() < 0) continue;
+            for (AbstractInsnNode instruction : body) {
                 if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC) {
                     if (composed) return Optional.empty();
                     operands.add(codecDescriptor(field.desc, classes) ? new Codec(field.owner, field.name)
@@ -178,7 +197,6 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                     return Optional.empty();
                 }
             }
-        }
         return Optional.empty();
     }
 

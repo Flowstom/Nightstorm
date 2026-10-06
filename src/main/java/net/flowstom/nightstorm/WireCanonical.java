@@ -51,8 +51,12 @@ final class WireCanonical {
     static WireSchema.Codec canonicalize(WireSchema.Codec codec, Function<String, ClassNode> classes) {
         var arguments = codec.arguments().stream().map(argument -> canonicalize(argument, classes)).toList();
         var proved = prove(new WireSchema.Codec(codec.owner(), codec.name(), List.of(), arguments), classes);
+        boolean provedIdentity = proved != null;
         if (proved == null) proved = new WireSchema.Codec(codec.owner(), codec.name(), List.of(), arguments);
-        for (String operation : codec.operations()) proved = proved.apply(operation);
+        for (String operation : codec.operations()) {
+            if (provedIdentity && operation.startsWith("field:")) continue;
+            proved = proved.apply(operation);
+        }
         return proved;
     }
 
@@ -111,12 +115,18 @@ final class WireCanonical {
             Object value = WireSchema.pop(stack);
             if (!(value instanceof WireSchema.Codec codec) || !codec.owner().equals(WireSchema.BYTE_CODECS)
                     || !codec.operations().isEmpty() || !Set.of("BYTE", "VAR_INT").contains(codec.name())
-                    || kind == Kind.NULLABLE && !codec.name().equals("BYTE")) WireSchema.fail();
-            stack.add(enumCodec(owner, codec.name(), kind));
+                    || kind == Kind.NULLABLE && !codec.name().equals("BYTE")) {
+                WireSchema.fail();
+            } else {
+                stack.add(enumCodec(owner, codec.name(), kind));
+            }
         } else {
             Object value = WireSchema.pop(stack);
-            if (!(value instanceof Integer index)) WireSchema.fail();
-            stack.add(new EnumBits(index, owner.name, kind == Kind.NULLABLE));
+            if (!(value instanceof Integer index)) {
+                WireSchema.fail();
+            } else {
+                stack.add(new EnumBits(index, owner.name, kind == Kind.NULLABLE));
+            }
         }
         return true;
     }
@@ -271,8 +281,9 @@ final class WireCanonical {
         Handle implementation = null;
         for (Object argument : dynamic.bsmArgs) if (argument instanceof Handle handle) implementation = handle;
         if (implementation == null || !implementation.getOwner().equals(owner.name)) return false;
-        MethodNode method = owner.methods.stream().filter(candidate -> candidate.name.equals(implementation.getName())
-                && candidate.desc.equals(implementation.getDesc())).findFirst().orElse(null);
+        final Handle target = implementation;
+        MethodNode method = owner.methods.stream().filter(candidate -> candidate.name.equals(target.getName())
+                && candidate.desc.equals(target.getDesc())).findFirst().orElse(null);
         if (method == null) return nullCall();
         var body = real(method);
         if (decode) {
@@ -344,11 +355,20 @@ final class WireCanonical {
         MethodNode method = owner.methods.stream().filter(candidate -> codec.name().equals(candidate.name + candidate.desc)).findFirst().orElse(null);
         if (method == null) return false;
         var body = real(method);
-        if (body.size() != 5 || !(body.get(0) instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
-                || !field.name.equals("STREAM_CODEC") || !(body.get(1) instanceof InvokeDynamicInsnNode decode)
-                || !(body.get(2) instanceof InvokeDynamicInsnNode encode) || !(body.get(3) instanceof MethodInsnNode map)
+        if (body.isEmpty() || !(body.get(0) instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
+                || !field.name.equals("STREAM_CODEC")) return false;
+        int parameters = Type.getArgumentTypes(method.desc).length;
+        int firstSlot = (method.access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+        int index = 1;
+        while (index < body.size() && body.get(index) instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD) {
+            if (load.var < firstSlot || load.var >= firstSlot + parameters) return false;
+            index++;
+        }
+        if (body.size() != index + 4 || !(body.get(index) instanceof InvokeDynamicInsnNode decode)
+                || !(body.get(index + 1) instanceof InvokeDynamicInsnNode encode)
+                || !(body.get(index + 2) instanceof MethodInsnNode map)
                 || !map.owner.equals("net/minecraft/network/codec/StreamCodec") || !map.name.equals("map")
-                || body.get(4).getOpcode() != Opcodes.ARETURN || !utfIdentifier(field.owner, classes)) return false;
+                || body.get(index + 3).getOpcode() != Opcodes.ARETURN || !utfIdentifier(field.owner, classes)) return false;
         return createsFromIdentifier(owner, decode) && handle(encode, owner.name, "identifier", "()L" + field.owner + ";");
     }
 
@@ -356,9 +376,10 @@ final class WireCanonical {
         Handle implementation = null;
         for (Object argument : dynamic.bsmArgs) if (argument instanceof Handle handle) implementation = handle;
         if (implementation == null) return false;
-        MethodNode method = resolve(implementation.getOwner(), implementation.getName(), implementation.getDesc(), name -> name.equals(owner.name) ? owner : null);
-        if (method == null) method = owner.methods.stream().filter(candidate -> candidate.name.equals(implementation.getName())
-                && candidate.desc.equals(implementation.getDesc())).findFirst().orElse(null);
+        final Handle target = implementation;
+        MethodNode method = resolve(target.getOwner(), target.getName(), target.getDesc(), name -> name.equals(owner.name) ? owner : null);
+        if (method == null) method = owner.methods.stream().filter(candidate -> candidate.name.equals(target.getName())
+                && candidate.desc.equals(target.getDesc())).findFirst().orElse(null);
         var body = method == null ? List.<AbstractInsnNode>of() : real(method);
         return body.size() == 4 && load(body.get(0), Opcodes.ALOAD, 0) && load(body.get(1), Opcodes.ALOAD, 1)
                 && body.get(2) instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
@@ -408,10 +429,12 @@ final class WireCanonical {
                     || body.get(4).getOpcode() != Opcodes.ARETURN) return false;
             return limit.operand == utfLimit(classes) && parse.owner.equals(Type.getReturnType(method.desc).getInternalName());
         }
-        if (body.size() != 5 || !load(body.get(0), Opcodes.ALOAD, 0) || !load(body.get(1), Opcodes.ALOAD, 1)
+        boolean returnsBuffer = body.size() == 7 && body.get(4).getOpcode() == Opcodes.POP
+                && load(body.get(5), Opcodes.ALOAD, 0) && body.get(6).getOpcode() == Opcodes.ARETURN;
+        boolean returnsWriter = body.size() == 5 && body.get(4).getOpcode() == Opcodes.ARETURN;
+        if (!returnsBuffer && !returnsWriter || !load(body.get(0), Opcodes.ALOAD, 0) || !load(body.get(1), Opcodes.ALOAD, 1)
                 || !(body.get(2) instanceof MethodInsnNode text) || !text.name.equals("toString")
-                || !(body.get(3) instanceof MethodInsnNode write) || !write.name.equals("writeUtf")
-                || body.get(4).getOpcode() != Opcodes.ARETURN) return false;
+                || !(body.get(3) instanceof MethodInsnNode write) || !write.name.equals("writeUtf")) return false;
         MethodNode writer = resolve(write.owner, write.name, write.desc, classes);
         var written = writer == null ? List.<AbstractInsnNode>of() : real(writer);
         return written.size() == 5 && written.get(2) instanceof IntInsnNode limit && limit.operand == utfLimit(classes)

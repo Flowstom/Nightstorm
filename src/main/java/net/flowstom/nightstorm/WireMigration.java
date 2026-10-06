@@ -113,8 +113,11 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
                 }
                 used.add(source);
             } else if (value instanceof ConstructorMapping.EnumConstant enumValue) {
+                boolean enumId = field.codec().name().equals("STREAM_CODEC")
+                        || field.codec().name().equals(WireCanonical.ENUM_ID)
+                        || field.codec().name().equals(WireCanonical.VARINT_ENUM_ID);
                 if (!field.codec().operations().isEmpty() || !field.codec().owner().equals(enumValue.owner())
-                        || !field.codec().name().equals("STREAM_CODEC") || !component.descriptor().equals("L" + enumValue.owner() + ";")) return Optional.empty();
+                        || !enumId || !component.descriptor().equals("L" + enumValue.owner() + ";")) return Optional.empty();
                 var enumClass = classes.apply(enumValue.owner());
                 if (enumClass == null || !enumIdCodec(enumClass)) return Optional.empty();
                 Integer id = PacketMigrationScanner.enumIds(enumClass).get(enumValue.name());
