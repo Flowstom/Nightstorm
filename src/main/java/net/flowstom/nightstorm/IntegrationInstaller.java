@@ -61,7 +61,7 @@ final class IntegrationInstaller {
         Path generatorPackage = installer.file(dataGen.findCompilationUnit().orElseThrow()).getParent();
         generatorPackage = generatorPackage.getParent().resolve("generators");
         Files.createDirectories(generatorPackage);
-        for (String name : List.of("MinecraftCompatibility", "NightstormDataNormalizer", "DataMigration", "EnumDataAccess", "ScalarDataAccess", "ScalarProgram")) {
+        for (String name : List.of("MinecraftCompatibility", "NightstormDataNormalizer", "DataMigration", "EnumDataAccess", "ScalarDataAccess", "ScalarProgram", "ApiRelocation")) {
             Files.copy(templates.resolve("data-generator/" + name + ".java"), generatorPackage.resolve(name + ".java"),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
@@ -71,6 +71,53 @@ final class IntegrationInstaller {
                 installer.file(registries.findCompilationUnit().orElseThrow()).getParent().resolve("NightstormRegistryData.java"),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         Json.write(source.resolve(".nightstorm/data-shapes.json"), dataShapes);
+        installer.guardNullableStringKeys(source);
+    }
+
+    /**
+     * A nullable string factory that forwards to {@code Key.key} cannot accept a missing property.
+     * Returning null matches the method's existing missing-key result without naming a caller.
+     */
+    private void guardNullableStringKeys(Path source) throws IOException {
+        try (var files = Files.walk(source)) {
+            for (var file : files.filter(Files::isRegularFile).filter(value -> value.toString().endsWith(".java"))
+                    .filter(value -> !value.toString().contains("/build/") && !value.toString().contains("/.git/"))
+                    .toList()) {
+                String text = Files.readString(file);
+                if (!text.contains("Key.key")) continue;
+                var result = parser.parse(text);
+                var unit = result.getResult().filter(ignored -> result.isSuccessful()).orElse(null);
+                if (unit == null) continue;
+                LexicalPreservingPrinter.setup(unit);
+                boolean changed = false;
+                for (var method : unit.findAll(MethodDeclaration.class)) {
+                    changed |= guardNullableStringKey(method);
+                }
+                if (changed) Files.writeString(file, LexicalPreservingPrinter.print(unit));
+            }
+        }
+    }
+
+    private boolean guardNullableStringKey(MethodDeclaration method) {
+        if (method.getParameters().size() != 1 || !method.getParameter(0).getType().asString().equals("String")) return false;
+        if (!nullableReturn(method) || method.getBody().isEmpty()) return false;
+        var body = method.getBody().get();
+        if (body.getStatements().size() != 1 || !body.getStatement(0).isReturnStmt()) return false;
+        var returned = body.getStatement(0).asReturnStmt().getExpression().orElse(null);
+        if (!(returned instanceof MethodCallExpr outer) || outer.getArguments().size() != 1) return false;
+        if (!(outer.getArgument(0) instanceof MethodCallExpr key) || !key.getNameAsString().equals("key") || key.getArguments().size() != 1) return false;
+        if (!(key.getArgument(0) instanceof NameExpr argument)) return false;
+        String parameter = method.getParameter(0).getNameAsString();
+        if (!argument.getNameAsString().equals(parameter)) return false;
+        String scope = key.getScope().map(Object::toString).orElse("");
+        if (!scope.equals("Key") && !scope.endsWith(".Key")) return false;
+        body.getStatements().add(0, parser.parseStatement("if (" + parameter + " == null) return null;").getResult().orElseThrow());
+        return true;
+    }
+
+    private static boolean nullableReturn(MethodDeclaration method) {
+        if (method.getAnnotations().stream().anyMatch(annotation -> annotation.getNameAsString().endsWith("Nullable"))) return true;
+        return method.getType().getAnnotations().stream().anyMatch(annotation -> annotation.getNameAsString().endsWith("Nullable"));
     }
 
     private void read(Path root, String requiredType) throws IOException {

@@ -136,7 +136,7 @@ final class WireManual {
         return List.copyOf(result);
     }
 
-    private static WireSchema.Codec delegated(MethodInsnNode call, boolean reading, Function<String, ClassNode> classes) {
+    static WireSchema.Codec delegated(MethodInsnNode call, boolean reading, Function<String, ClassNode> classes) {
         String descriptor = reading ? Type.getReturnType(call.desc).getDescriptor() : Type.getArgumentTypes(call.desc)[0].getDescriptor();
         if (!descriptor.startsWith("L")) return null;
         String owner = Type.getType(descriptor).getInternalName();

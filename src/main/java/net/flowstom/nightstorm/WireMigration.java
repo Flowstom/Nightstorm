@@ -82,6 +82,22 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
             int source = -1;
             String constant = null;
             String javaType = codec.javaType(), networkType = codec.networkType();
+            Integer nullableSource = value == null
+                    ? WireCanonical.nullableByteSource(baseline, oldCodecs, component, field.codec()) : null;
+            if (nullableSource != null) {
+                Map<String, Integer> ids = null;
+                try {
+                    ClassNode enumeration = classes.apply(field.codec().owner());
+                    if (enumeration != null) ids = PacketMigrationScanner.enumIds(enumeration);
+                } catch (RuntimeException exception) {
+                    ids = null;
+                }
+                if (ids == null || ids.isEmpty()) return Optional.empty();
+                used.add(nullableSource);
+                bindings.add(new Binding(field.component(), nullableSource, "",
+                        CodecChange.enumeration("NetworkBuffer.OPTIONAL_VAR_INT", ids, true).expression(), null));
+                continue;
+            }
             if (value instanceof ConstructorMapping.Parameter parameter) {
                 source = parameter.index();
                 boolean container = parameter.descriptor().startsWith("[") && component.descriptor().equals("Ljava/util/List;");
@@ -97,8 +113,11 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
                 }
                 used.add(source);
             } else if (value instanceof ConstructorMapping.EnumConstant enumValue) {
+                boolean enumId = field.codec().name().equals("STREAM_CODEC")
+                        || field.codec().name().equals(WireCanonical.ENUM_ID)
+                        || field.codec().name().equals(WireCanonical.VARINT_ENUM_ID);
                 if (!field.codec().operations().isEmpty() || !field.codec().owner().equals(enumValue.owner())
-                        || !field.codec().name().equals("STREAM_CODEC") || !component.descriptor().equals("L" + enumValue.owner() + ";")) return Optional.empty();
+                        || !enumId || !component.descriptor().equals("L" + enumValue.owner() + ";")) return Optional.empty();
                 var enumClass = classes.apply(enumValue.owner());
                 if (enumClass == null || !enumIdCodec(enumClass)) return Optional.empty();
                 Integer id = PacketMigrationScanner.enumIds(enumClass).get(enumValue.name());
@@ -113,7 +132,30 @@ record WireMigration(WireSchema baseline, WireSchema target, List<Binding> bindi
             if (booleanIds == null && codec.supported() && !codec.vanillaDescriptor().equals(component.descriptor())) return Optional.empty();
             bindings.add(new Binding(field.component(), source, javaType, networkType, constant));
         }
+        // A boolean whose proved ids are the two boolean bytes needs no payload rewrite when every other field stays put.
+        if (indexAligned(bindings, baseline, target)) return Optional.empty();
         return Optional.of(new WireMigration(baseline, target, bindings));
+    }
+
+    private static boolean indexAligned(List<Binding> bindings, WireSchema baseline, WireSchema target) {
+        if (bindings.size() != target.fields().size() || baseline.components().size() != target.components().size()) return false;
+        var baselineCodecs = new HashMap<Integer, WireSchema.Codec>();
+        var targetCodecs = new HashMap<Integer, WireSchema.Codec>();
+        baseline.fields().forEach(field -> baselineCodecs.put(field.component(), field.codec()));
+        target.fields().forEach(field -> targetCodecs.put(field.component(), field.codec()));
+        var order = new ArrayList<Integer>();
+        var seen = new HashSet<Integer>();
+        for (var binding : bindings) {
+            order.add(binding.component());
+            if (binding.constant() != null || binding.source() < 0 || binding.source() != binding.component()
+                    || !seen.add(binding.source())) return false;
+            boolean booleanBytes = binding.networkType().equals(CodecChange.bool(0, 1).expression());
+            var before = baselineCodecs.get(binding.source());
+            var after = targetCodecs.get(binding.component());
+            if (!booleanBytes && (before == null || after == null || !before.equals(after))) return false;
+        }
+        var baselineOrder = baseline.fields().stream().map(WireSchema.Field::component).toList();
+        return seen.size() == baseline.components().size() && order.equals(baselineOrder);
     }
 
     static boolean compatibleEncoding(WireSchema.Codec before, WireSchema.Codec after) {
