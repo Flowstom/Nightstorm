@@ -47,6 +47,14 @@ public final class ApiRelocation {
         }
     }
 
+    public static Object apply(Object value, String... methods) {
+        for (String method : methods) {
+            if (value == null) return null;
+            value = invoke(value, method);
+        }
+        return value;
+    }
+
     public static Object read(String baselineType, Object receiver, String member) {
         var type = type(baselineType);
         var accessors = evidence().getAsJsonArray("accessors");

@@ -29,7 +29,8 @@ class GeneratorApiRelocationTest {
         String catalog = Files.readString(generator.resolve("src/Catalog.java"));
         assertTrue(catalog.contains("ApiRelocation.catalogFields(\"sample.Tone\")"), catalog);
         assertTrue(catalog.contains("ApiRelocation.asFloat(\"sample.Tone\""), catalog);
-        assertTrue(catalog.contains("((sample.Note) ApiRelocation.read(\"sample.Tone\""), catalog);
+        assertTrue(catalog.contains("ApiRelocation.apply(ApiRelocation.read(\"sample.Tone\""), catalog);
+        assertTrue(catalog.contains("\"location\""), catalog);
         assertTrue(catalog.contains("ApiRelocation.read(\"sample.Tone\", box, \"getTone\")"), catalog);
         assertTrue(catalog.contains("java.util.Objects.equals"), catalog);
         assertFalse(catalog.contains("Tone.class"));
@@ -47,6 +48,7 @@ class GeneratorApiRelocationTest {
             String described = (String) loader.loadClass("net.minestom.generators.Catalog").getMethod("describe", loader.loadClass("sample.Box")).invoke(null, box);
             assertTrue(described.contains("wood=1.0,minecraft:wood_break"), described);
             assertTrue(described.contains("stone=1.0,minecraft:stone_break"), described);
+            assertTrue(described.contains("leaf=1.0,null"), described);
             assertTrue(described.endsWith("match=wood"), described);
         } finally {
             System.clearProperty("nightstorm.api.relocation");
@@ -202,9 +204,11 @@ class GeneratorApiRelocationTest {
                 public final class Tones {
                     public static final Key<ToneValue> WOOD = new Key<>("WOOD");
                     public static final Key<ToneValue> STONE = new Key<>("STONE");
+                    public static final Key<ToneValue> LEAF = new Key<>("LEAF");
                     public static final Map<String, ToneValue> VALUES = Map.of(
                             "WOOD", new ToneValue(1.0f, Optional.of(new Holder<>(new Note(new Id("minecraft:wood_break"))))),
-                            "STONE", new ToneValue(1.0f, Optional.of(new Holder<>(new Note(new Id("minecraft:stone_break"))))));
+                            "STONE", new ToneValue(1.0f, Optional.of(new Holder<>(new Note(new Id("minecraft:stone_break"))))),
+                            "LEAF", new ToneValue(1.0f, Optional.empty()));
                 }
                 """));
         sources.add(source("sample/Box.java", """

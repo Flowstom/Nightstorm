@@ -64,7 +64,7 @@ final class GeneratorApiRelocation {
             moves.put(type, prove(type, usage.byType.get(type), units, baseline, target, accessors));
         }
         var changed = new ArrayList<Parsed>();
-        for (var unit : units) if (rewrite(unit, vanished, baseline, moves.keySet())) changed.add(unit);
+        for (var unit : units) if (rewrite(unit, vanished, baseline, moves)) changed.add(unit);
         writeProof(proofOutput, moves, accessors);
         for (var unit : changed) Files.writeString(unit.path(), unit.unit().toString());
         return List.copyOf(moves.keySet());
@@ -278,7 +278,8 @@ final class GeneratorApiRelocation {
         return List.copyOf(steps);
     }
 
-    private static boolean rewrite(Parsed unit, Set<String> vanished, Map<String, ClassModel> baseline, Set<String> proved) {
+    private static boolean rewrite(Parsed unit, Set<String> vanished, Map<String, ClassModel> baseline, Map<String, TypeMove> moves) {
+        Set<String> proved = moves.keySet();
         var resolver = new Resolver(unit.unit(), baseline);
         var locals = locals(unit.unit(), resolver, baseline, vanished);
         var edits = new ArrayList<Edit>();
@@ -322,6 +323,14 @@ final class GeneratorApiRelocation {
                 }
                 if (!call.getArguments().isEmpty()) fail(owner, "unsupported call " + call.getNameAsString());
                 var member = member(baseline.get(owner), call.getNameAsString(), false);
+                if (optionalMember(moves.get(owner), call.getNameAsString())) {
+                    var chain = callChain(call, member, baseline, owner);
+                    if (!chain.methods().isEmpty()) {
+                        edits.add(new Edit(depth(chain.outermost()), () -> chain.outermost().replace(
+                                apply(owner, call.getScope().get(), call.getNameAsString(), chain))));
+                        continue;
+                    }
+                }
                 edits.add(new Edit(depth(call), () -> call.replace(read(owner, call.getScope().get(), member))));
                 continue;
             }
@@ -359,6 +368,37 @@ final class GeneratorApiRelocation {
             unit.unit().addImport("net.minestom.generators.ApiRelocation");
         }
         return !edits.isEmpty() || typesChanged || importsChanged;
+    }
+
+    private static boolean optionalMember(TypeMove move, String name) {
+        if (move == null) return false;
+        if (!(move.encoded().get("members") instanceof Map<?, ?> members)) return false;
+        if (!(members.get(name) instanceof Map<?, ?> member)) return false;
+        return member.get("unwrap") instanceof List<?> steps && steps.contains("optional");
+    }
+
+    private static NullableChain callChain(MethodCallExpr call, Member member, Map<String, ClassModel> baseline, String owner) {
+        var methods = new ArrayList<String>();
+        Expression outermost = call;
+        String type = member.type().raw();
+        while (outermost.getParentNode().orElse(null) instanceof MethodCallExpr parent
+                && parent.getArguments().isEmpty()
+                && parent.getScope().orElse(null) == outermost) {
+            String name = parent.getNameAsString();
+            var next = findMethod(findType(type, baseline), name, 0, baseline, Set.of());
+            if (next == null && name.equals("toString")) type = "java.lang.String";
+            else if (next == null) return fail(owner, "unsupported nullable chain " + name);
+            else type = next.type().raw();
+            methods.add(name);
+            outermost = parent;
+        }
+        return new NullableChain(outermost, List.copyOf(methods), type);
+    }
+
+    private static Expression apply(String owner, Expression receiver, String member, NullableChain chain) {
+        String methods = String.join(", ", chain.methods().stream().map(name -> "\"" + name + "\"").toList());
+        return expression("((" + chain.type().replace('$', '.') + ") ApiRelocation.apply(ApiRelocation.read(\""
+                + owner + "\", " + receiver + ", \"" + member + "\"), " + methods + "))");
     }
 
     private static Expression read(String owner, Expression receiver, Member member) {
@@ -806,6 +846,9 @@ final class GeneratorApiRelocation {
     }
 
     private record TypeMove(Map<String, Object> encoded, Catalog catalog) {
+    }
+
+    private record NullableChain(Expression outermost, List<String> methods, String type) {
     }
 
     private record Call(String receiver, String method, int arguments) {
