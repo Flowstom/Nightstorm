@@ -61,7 +61,7 @@ final class IntegrationInstaller {
         Path generatorPackage = installer.file(dataGen.findCompilationUnit().orElseThrow()).getParent();
         generatorPackage = generatorPackage.getParent().resolve("generators");
         Files.createDirectories(generatorPackage);
-        for (String name : List.of("MinecraftCompatibility", "NightstormDataNormalizer", "DataMigration", "EnumDataAccess", "ScalarDataAccess", "ScalarProgram")) {
+        for (String name : List.of("MinecraftCompatibility", "NightstormDataNormalizer", "DataMigration", "EnumDataAccess", "ScalarDataAccess", "ScalarProgram", "ApiRelocation")) {
             Files.copy(templates.resolve("data-generator/" + name + ".java"), generatorPackage.resolve(name + ".java"),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }

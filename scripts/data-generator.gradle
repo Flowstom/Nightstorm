@@ -11,6 +11,38 @@ gradle.beforeProject { project ->
     }
     project.pluginManager.withPlugin('java') {
         project.dependencies.add('implementation', 'org.ow2.asm:asm-tree:9.9')
+        def relocate = project.tasks.register('nightstormRelocateGeneratorApis') {
+            doLast {
+                def baseline = System.getenv('NIGHTSTORM_BASELINE_JAR')
+                def binary = System.getenv('NIGHTSTORM_BIN')
+                def proof = System.getenv('NIGHTSTORM_API_RELOCATION')
+                if (!baseline || !binary || !proof) return
+                def baselineFile = new File(baseline)
+                if (!baselineFile.isFile()) return
+                def candidates = project.sourceSets.main.compileClasspath.files.findAll { file ->
+                    if (!file.isFile() || !file.name.endsWith('.jar')) return false
+                    new java.util.zip.ZipFile(file).withCloseable { zip ->
+                        zip.getEntry('net/minecraft/SharedConstants.class') != null
+                    }
+                }
+                if (candidates.size() != 1) {
+                    if (candidates.size() > 1) throw new GradleException('Expected one resolved vanilla jar, found: ' + candidates)
+                    return
+                }
+                def vanilla = candidates.first()
+                if (vanilla.canonicalFile == baselineFile.canonicalFile) return
+                project.exec {
+                    commandLine binary, 'relocate-generator-apis',
+                            '--generator', project.projectDir.absolutePath,
+                            '--baseline-jar', baselineFile.absolutePath,
+                            '--jar', vanilla.absolutePath,
+                            '--output', proof
+                }
+            }
+        }
+        project.tasks.withType(JavaCompile).configureEach {
+            dependsOn relocate
+        }
         project.tasks.withType(JavaExec).configureEach {
             def jarOutput = System.getenv('NIGHTSTORM_VANILLA_JAR_OUTPUT')
             if (jarOutput != null) {
