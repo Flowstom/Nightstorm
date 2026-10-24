@@ -89,6 +89,38 @@ class GeneratorApiRelocationTest {
     }
 
     @Test
+    void readsTheKeyWhenAValueBecomesItsRegistryKey() throws Exception {
+        var baseline = jar("fluid-baseline.jar", fluidBaseline());
+        var target = jar("fluid-target.jar", fluidTarget());
+        var generator = root.resolve("fluid-generator");
+        write(generator.resolve("src/Catalog.java"), """
+                package net.minestom.generators;
+                import sample.*;
+                public class Catalog {
+                    public static String bucket() {
+                        var items = Items.ITEM;
+                        for (var fluid : Fluids.ALL) {
+                            return items.getKey(fluid.getBucket()).toString();
+                        }
+                        return "";
+                    }
+                }
+                """);
+        var proof = root.resolve("fluid-proof.json");
+        assertEquals(List.of("sample.Item"), GeneratorApiRelocation.relocate(generator, baseline, target, proof));
+        String source = Files.readString(generator.resolve("src/Catalog.java"));
+        assertTrue(source.contains("fluid.getBucket().id().toString()"), source);
+        assertFalse(source.contains("getKey("), source);
+        var classes = root.resolve("fluid-runtime");
+        compile(generator, classes, List.of(target));
+        try (var loader = new URLClassLoader(new java.net.URL[]{classes.toUri().toURL(), target.toUri().toURL()})) {
+            String bucket = (String) loader.loadClass("net.minestom.generators.Catalog").getMethod("bucket").invoke(null);
+            assertEquals("minecraft:water_bucket", bucket);
+        }
+        assertEquals(List.of(), GeneratorApiRelocation.relocate(generator, baseline, target, proof));
+    }
+
+    @Test
     void ignoresCallsWhoseOverloadsAreNotTheRelocatedType() throws Exception {
         var baseline = jar("baseline.jar", baselineSources());
         var target = jar("target.jar", targetSources(true));
@@ -246,6 +278,94 @@ class GeneratorApiRelocationTest {
                         if (value == null) throw new IllegalStateException(key.name);
                         return new Holder<>(value);
                     }
+                }
+                """));
+        return sources;
+    }
+
+    private static List<Source> fluidBaseline() {
+        var sources = fluidShared();
+        sources.add(source("sample/Fluid.java", """
+                package sample;
+                public abstract class Fluid {
+                    public abstract Item getBucket();
+                }
+                """));
+        sources.add(source("sample/Water.java", """
+                package sample;
+                public final class Water extends Fluid {
+                    public Item getBucket() { return new Item("water_bucket"); }
+                }
+                """));
+        return sources;
+    }
+
+    private static List<Source> fluidTarget() {
+        var sources = fluidShared();
+        sources.add(source("sample/Fluid.java", """
+                package sample;
+                public abstract class Fluid {
+                    public abstract Key<Item> getBucket();
+                }
+                """));
+        sources.add(source("sample/Water.java", """
+                package sample;
+                public final class Water extends Fluid {
+                    public Key<Item> getBucket() { return new Key<>(new Id("minecraft:item"), new Id("minecraft:water_bucket")); }
+                }
+                """));
+        return sources;
+    }
+
+    private static List<Source> fluidShared() {
+        var sources = new ArrayList<Source>();
+        sources.add(source("sample/Id.java", """
+                package sample;
+                public final class Id {
+                    private final String text;
+                    public Id(String text) { this.text = text; }
+                    public String toString() { return text; }
+                    public boolean equals(Object other) { return other instanceof Id id && text.equals(id.text); }
+                }
+                """));
+        sources.add(source("sample/Item.java", """
+                package sample;
+                public final class Item {
+                    public final String name;
+                    public Item(String name) { this.name = name; }
+                }
+                """));
+        sources.add(source("sample/Key.java", """
+                package sample;
+                public final class Key<T> {
+                    private final Id registry;
+                    private final Id id;
+                    public Key(Id registry, Id id) { this.registry = registry; this.id = id; }
+                    public Id id() { return id; }
+                    public Id registry() { return registry; }
+                    public boolean isFor(Key<?> other) { return registry.equals(other.id()); }
+                }
+                """));
+        sources.add(source("sample/Registry.java", """
+                package sample;
+                public interface Registry<T> extends Iterable<T> {
+                    Id getKey(T value);
+                }
+                """));
+        sources.add(source("sample/Fluids.java", """
+                package sample;
+                public final class Fluids implements Registry<Fluid> {
+                    public static final Fluids ALL = new Fluids();
+                    public Id getKey(Fluid value) { return new Id("minecraft:water"); }
+                    public java.util.Iterator<Fluid> iterator() { return java.util.List.<Fluid>of(new Water()).iterator(); }
+                }
+                """));
+        sources.add(source("sample/Items.java", """
+                package sample;
+                public final class Items implements Registry<Item> {
+                    public static final Items ITEM = new Items();
+                    public Id getKey(Item value) { return new Id("minecraft:" + value.name); }
+                    public java.util.Iterator<Item> iterator() { return java.util.List.<Item>of().iterator(); }
                 }
                 """));
         return sources;

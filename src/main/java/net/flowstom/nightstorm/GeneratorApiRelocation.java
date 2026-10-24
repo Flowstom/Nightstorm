@@ -8,6 +8,7 @@ import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.stmt.ForEachStmt;
 import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.ClassExpr;
 import com.github.javaparser.ast.expr.Expression;
@@ -18,19 +19,25 @@ import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,29 +59,34 @@ final class GeneratorApiRelocation {
         var target = load(targetJar);
         var units = parse(generator);
         var vanished = referenced(units, baseline, target);
-        if (vanished.isEmpty()) {
-            if (Files.exists(proofOutput) && sourcesContain(units, "ApiRelocation.")) return List.of();
+        var moves = new LinkedHashMap<String, TypeMove>();
+        var accessors = new ArrayList<Map<String, Object>>();
+        if (!vanished.isEmpty()) {
+            var usage = usage(units, vanished, baseline);
+            for (String type : vanished) {
+                moves.put(type, prove(type, usage.byType.get(type), units, baseline, target, accessors));
+            }
+        }
+        var shifted = new ArrayList<String>();
+        var changed = new ArrayList<Parsed>();
+        for (var unit : units) if (rewrite(unit, vanished, baseline, target, targetJar, moves, shifted)) changed.add(unit);
+        if (changed.isEmpty() && vanished.isEmpty()) {
+            if (Files.exists(proofOutput)) return List.of();
             writeProof(proofOutput, Map.of(), List.of());
             return List.of();
         }
-        var usage = usage(units, vanished, baseline);
-        var moves = new LinkedHashMap<String, TypeMove>();
-        var accessors = new ArrayList<Map<String, Object>>();
-        for (String type : vanished) {
-            moves.put(type, prove(type, usage.byType.get(type), units, baseline, target, accessors));
-        }
-        var changed = new ArrayList<Parsed>();
-        for (var unit : units) if (rewrite(unit, vanished, baseline, moves)) changed.add(unit);
         writeProof(proofOutput, moves, accessors);
         for (var unit : changed) Files.writeString(unit.path(), unit.unit().toString());
-        return List.copyOf(moves.keySet());
+        var relocated = new ArrayList<>(moves.keySet());
+        for (String type : shifted) if (!relocated.contains(type)) relocated.add(type);
+        return List.copyOf(relocated);
     }
 
     private static TypeMove prove(String type, Usage usage, List<Parsed> units, Map<String, ClassModel> baseline,
                                   Map<String, ClassModel> target, List<Map<String, Object>> accessors) {
         var model = baseline.get(type);
         if (model == null) fail(type, "missing from the baseline jar");
-        var catalog = catalog(type, model, target);
+        var catalog = catalog(type, model, target, usage);
         var members = new LinkedHashMap<String, Map<String, Object>>();
         for (String field : usage.fields()) align(type, member(model, field, true), catalog.value(), target, members);
         for (String method : usage.methods()) align(type, member(model, method, false), catalog.value(), target, members);
@@ -102,16 +114,15 @@ final class GeneratorApiRelocation {
         return new TypeMove(encoded, catalog);
     }
 
-    private static Catalog catalog(String type, ClassModel model, Map<String, ClassModel> target) {
+    private static Catalog catalog(String type, ClassModel model, Map<String, ClassModel> target, Usage usage) {
         var names = new HashSet<String>();
         for (Member field : model.fields()) {
             if (field.isStatic() && field.type().raw().equals(type)) names.add(field.name());
         }
         if (names.size() < 2) fail(type, "no constant catalog");
-        String bestClass = null;
-        int best = 0;
-        boolean tie = false;
-        JavaType bestType = null;
+        var best = new ArrayList<JavaType>();
+        var bestClasses = new ArrayList<String>();
+        int bestSize = 0;
         for (ClassModel candidate : target.values()) {
             if (candidate.name().matches(".*\\$\\d+($|\\..*)")) continue;
             var groups = new HashMap<String, List<Member>>();
@@ -120,22 +131,50 @@ final class GeneratorApiRelocation {
                 groups.computeIfAbsent(field.type().key(), key -> new ArrayList<>()).add(field);
             }
             for (var group : groups.values()) {
-                if (group.size() > best) {
-                    best = group.size();
-                    bestClass = candidate.name();
-                    bestType = group.getFirst().type();
-                    tie = false;
-                } else if (group.size() == best && best > 0) {
-                    tie = true;
+                if (group.size() < 2 || group.size() * 2 <= names.size()) continue;
+                if (group.size() > bestSize) {
+                    bestSize = group.size();
+                    best.clear();
+                    bestClasses.clear();
+                }
+                if (group.size() == bestSize) {
+                    best.add(group.getFirst().type());
+                    bestClasses.add(candidate.name());
                 }
             }
         }
-        if (bestClass == null || tie || best < 2 || best * 2 <= names.size()) {
-            fail(type, "no unique constant catalog");
+        if (best.isEmpty()) fail(type, "no unique constant catalog");
+        if (best.size() > 1) {
+            var viableType = new ArrayList<JavaType>();
+            var viableClass = new ArrayList<String>();
+            for (int index = 0; index < best.size(); index++) {
+                if (hostsMembers(type, model, usage, catalogValue(best.get(index)), target)) {
+                    viableType.add(best.get(index));
+                    viableClass.add(bestClasses.get(index));
+                }
+            }
+            if (viableType.size() != 1) fail(type, "no unique constant catalog");
+            best = viableType;
+            bestClasses = viableClass;
         }
-        String value = bestType.arguments().size() == 1 ? bestType.arguments().getFirst().raw() : bestType.raw();
+        String value = catalogValue(best.getFirst());
         if (lookup(target, value) == null) fail(type, "relocated value " + value + " is missing");
-        return new Catalog(bestClass, bestType, value);
+        return new Catalog(bestClasses.getFirst(), best.getFirst(), value);
+    }
+
+    private static String catalogValue(JavaType fieldType) {
+        return fieldType.arguments().size() == 1 ? fieldType.arguments().getFirst().raw() : fieldType.raw();
+    }
+
+    private static boolean hostsMembers(String type, ClassModel model, Usage usage, String value, Map<String, ClassModel> target) {
+        try {
+            var sink = new LinkedHashMap<String, Map<String, Object>>();
+            for (String field : usage.fields()) align(type, member(model, field, true), value, target, sink);
+            for (String method : usage.methods()) align(type, member(model, method, false), value, target, sink);
+            return true;
+        } catch (IllegalStateException exception) {
+            return false;
+        }
     }
 
     private static void align(String type, Member source, String value, Map<String, ClassModel> target,
@@ -278,10 +317,12 @@ final class GeneratorApiRelocation {
         return List.copyOf(steps);
     }
 
-    private static boolean rewrite(Parsed unit, Set<String> vanished, Map<String, ClassModel> baseline, Map<String, TypeMove> moves) {
+    private static boolean rewrite(Parsed unit, Set<String> vanished, Map<String, ClassModel> baseline, Map<String, ClassModel> target,
+                                   Path targetJar, Map<String, TypeMove> moves, List<String> shifted) throws IOException {
         Set<String> proved = moves.keySet();
         var resolver = new Resolver(unit.unit(), baseline);
         var locals = locals(unit.unit(), resolver, baseline, vanished);
+        var types = typedLocals(unit.unit(), resolver, baseline);
         var edits = new ArrayList<Edit>();
         for (ClassExpr expr : unit.unit().findAll(ClassExpr.class)) {
             String name = resolver.typeName(expr.getType());
@@ -334,6 +375,7 @@ final class GeneratorApiRelocation {
                 edits.add(new Edit(depth(call), () -> call.replace(read(owner, call.getScope().get(), member))));
                 continue;
             }
+            if (keyArgument(call, edits, types, resolver, baseline, target, targetJar, shifted)) continue;
             if (owner == null) continue;
             var method = findMethod(findType(owner, baseline), call.getNameAsString(), call.getArguments().size(), baseline, vanished);
             if (method != null && vanished.contains(method.type().raw())) {
@@ -407,6 +449,167 @@ final class GeneratorApiRelocation {
             return expression("ApiRelocation." + helper + "(\"" + owner + "\", " + receiver + ", \"" + member.name() + "\")");
         }
         return expression("((" + member.type().raw().replace('$', '.') + ") ApiRelocation.read(\"" + owner + "\", " + receiver + ", \"" + member.name() + "\"))");
+    }
+
+    /**
+     * A value passed to an identifier lookup may now be the registry key of that value.
+     * The key's own identifier replaces the lookup when bytecode can tell it from the registry id.
+     */
+    private static boolean keyArgument(MethodCallExpr call, List<Edit> edits, Map<String, JavaType> types, Resolver resolver,
+                                       Map<String, ClassModel> baseline, Map<String, ClassModel> target, Path targetJar,
+                                       List<String> shifted) throws IOException {
+        if (call.getScope().isEmpty() || call.getArguments().size() != 1 || !(call.getArgument(0) instanceof MethodCallExpr inner)
+                || inner.getScope().isEmpty()) return false;
+        JavaType receiver = javaType(call.getScope().get(), types, resolver, baseline);
+        JavaType innerReceiver = javaType(inner.getScope().get(), types, resolver, baseline);
+        if (receiver == null || innerReceiver == null || !inner.getArguments().isEmpty()) return false;
+        var outer = findMethod(lookup(baseline, receiver.raw()), call.getNameAsString(), 1, baseline, Set.of());
+        var before = findMethod(lookup(baseline, innerReceiver.raw()), inner.getNameAsString(), 0, baseline, Set.of());
+        var after = findMethod(lookup(target, innerReceiver.raw()), inner.getNameAsString(), 0, target, Set.of());
+        if (outer == null || outer.parameters().size() != 1 || before == null || after == null) return false;
+        JavaType expected = substitute(outer.parameters().getFirst(), bindings(receiver, baseline));
+        JavaType returned = substitute(after.type(), bindings(innerReceiver, target));
+        if (expected.variable() || !expected.raw().equals(substitute(before.type(), bindings(innerReceiver, baseline)).raw())) return false;
+        if (returned.arguments().size() != 1 || returned.arguments().getFirst().variable()
+                || !returned.arguments().getFirst().raw().equals(expected.raw()) || returned.raw().equals(expected.raw())) return false;
+        JavaType identifier = substitute(outer.type(), bindings(receiver, baseline));
+        String getter = entryId(targetJar, returned.raw(), identifier.raw());
+        if (getter == null) return false;
+        final String value = inner.toString();
+        final String read = getter;
+        edits.add(new Edit(depth(call), () -> call.replace(expression(value + "." + read + "()"))));
+        shifted.add(expected.raw());
+        return true;
+    }
+
+    private static Map<String, JavaType> typedLocals(CompilationUnit unit, Resolver resolver, Map<String, ClassModel> classes) {
+        var types = new HashMap<String, JavaType>();
+        for (MethodDeclaration method : unit.findAll(MethodDeclaration.class)) {
+            for (var parameter : method.getParameters()) {
+                JavaType type = declaredJavaType(parameter.getType(), resolver);
+                if (type != null) types.put(parameter.getNameAsString(), type);
+            }
+        }
+        for (VariableDeclarator variable : unit.findAll(VariableDeclarator.class)) {
+            JavaType type = null;
+            if ("var".equals(variable.getType().asString()) && variable.getInitializer().isPresent()) {
+                type = javaType(variable.getInitializer().get(), types, resolver, classes);
+            } else if ("var".equals(variable.getType().asString())
+                    && variable.getParentNode().orElse(null) instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr declared
+                    && declared.getParentNode().orElse(null) instanceof ForEachStmt loop) {
+                type = iterableElement(javaType(loop.getIterable(), types, resolver, classes), classes);
+            } else {
+                type = declaredJavaType(variable.getType(), resolver);
+            }
+            if (type != null) types.put(variable.getNameAsString(), type);
+        }
+        return types;
+    }
+
+    private static JavaType declaredJavaType(com.github.javaparser.ast.type.Type type, Resolver resolver) {
+        if (!(type instanceof ClassOrInterfaceType declared)) return null;
+        String raw = resolver.typeName(declared);
+        if (raw == null) return null;
+        var arguments = new ArrayList<JavaType>();
+        if (declared.getTypeArguments().isPresent()) {
+            for (var argument : declared.getTypeArguments().get()) {
+                JavaType nested = declaredJavaType(argument, resolver);
+                if (nested == null) return new JavaType(raw, List.of(), false);
+                arguments.add(nested);
+            }
+        }
+        return new JavaType(raw, List.copyOf(arguments), false);
+    }
+
+    private static JavaType javaType(Expression expression, Map<String, JavaType> types, Resolver resolver, Map<String, ClassModel> classes) {
+        if (expression instanceof NameExpr name) {
+            JavaType local = types.get(name.getNameAsString());
+            if (local != null) return local;
+            String type = resolver.simple(name.getNameAsString());
+            return type == null ? null : new JavaType(type, List.of(), false);
+        }
+        if (expression instanceof FieldAccessExpr access) {
+            JavaType owner = javaType(access.getScope(), types, resolver, classes);
+            if (owner == null) return null;
+            var model = lookup(classes, owner.raw());
+            if (model == null) return null;
+            for (Member field : model.fields()) {
+                if (field.field() && field.name().equals(access.getNameAsString())) {
+                    return substitute(field.type(), bindings(owner, classes));
+                }
+            }
+        }
+        return null;
+    }
+
+    private static JavaType iterableElement(JavaType type, Map<String, ClassModel> classes) {
+        var pending = new ArrayDeque<JavaType>();
+        var seen = new HashSet<String>();
+        if (type != null) pending.add(type);
+        while (!pending.isEmpty()) {
+            JavaType current = pending.removeFirst();
+            if (current.variable() || !seen.add(current.key())) continue;
+            if ("java.lang.Iterable".equals(current.raw()) && current.arguments().size() == 1) return current.arguments().getFirst();
+            var model = lookup(classes, current.raw());
+            if (model == null) continue;
+            var map = bindings(current, classes);
+            for (JavaType superType : model.superTypes()) pending.add(substitute(superType, map));
+        }
+        return null;
+    }
+
+    private static Map<String, JavaType> bindings(JavaType type, Map<String, ClassModel> classes) {
+        var bindings = new LinkedHashMap<String, JavaType>();
+        bind(type, classes, bindings, new HashSet<>());
+        return bindings;
+    }
+
+    private static void bind(JavaType type, Map<String, ClassModel> classes, Map<String, JavaType> bindings, Set<String> seen) {
+        if (type == null || type.variable() || !seen.add(type.key())) return;
+        var model = lookup(classes, type.raw());
+        if (model == null) return;
+        for (int index = 0; index < model.typeParameters().size() && index < type.arguments().size(); index++) {
+            bindings.putIfAbsent(model.typeParameters().get(index), type.arguments().get(index));
+        }
+        for (JavaType superType : model.superTypes()) bind(substitute(superType, bindings), classes, bindings, seen);
+    }
+
+    private static String entryId(Path jar, String className, String identifier) throws IOException {
+        var getters = new ArrayList<String>();
+        ClassNode node;
+        try (var zip = new ZipFile(jar.toFile())) {
+            var entry = zip.getEntry(className.replace('.', '/') + ".class");
+            if (entry == null) return null;
+            var reader = new ClassReader(zip.getInputStream(entry).readAllBytes());
+            node = new ClassNode();
+            reader.accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        }
+        for (MethodNode method : node.methods) {
+            if ((method.access & Opcodes.ACC_PUBLIC) == 0 || (method.access & Opcodes.ACC_STATIC) != 0
+                    || (method.access & (Opcodes.ACC_BRIDGE | Opcodes.ACC_SYNTHETIC)) != 0) continue;
+            var signature = method.signature == null ? methodSignature(method.desc) : parseMethod(method.signature);
+            if (!signature.parameters().isEmpty() || !signature.returned().raw().equals(identifier) || !pureGetter(method)) continue;
+            getters.add(method.name);
+        }
+        if (getters.size() == 1) return getters.getFirst();
+        if (getters.isEmpty()) return null;
+        var usedOnParameter = new LinkedHashSet<String>();
+        for (MethodNode method : node.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode invoked) || !getters.contains(invoked.name)) continue;
+                AbstractInsnNode previous = instruction.getPrevious();
+                while (previous != null && previous.getOpcode() < 0) previous = previous.getPrevious();
+                if (previous instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var != 0) usedOnParameter.add(invoked.name);
+            }
+        }
+        return usedOnParameter.size() == 1 ? usedOnParameter.getFirst() : null;
+    }
+
+    private static boolean pureGetter(MethodNode method) {
+        var code = Arrays.stream(method.instructions.toArray()).filter(instruction -> instruction.getOpcode() >= 0).toList();
+        return code.size() == 3 && code.get(0) instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 0
+                && code.get(1) instanceof FieldInsnNode
+                && code.get(2).getOpcode() == Opcodes.ARETURN;
     }
 
     private static String expressionType(Expression expression, Map<String, String> locals, Resolver resolver, Map<String, ClassModel> baseline, Set<String> vanished) {
@@ -676,7 +879,7 @@ final class GeneratorApiRelocation {
 
     private static ClassModel classModel(ClassNode node) {
         var parameters = new ArrayList<String>();
-        if (node.signature != null && node.signature.startsWith("<")) skipTypeParameters(node.signature, new int[]{0}, parameters);
+        var supers = superTypes(node.signature, parameters);
         var fields = new ArrayList<Member>();
         for (FieldNode field : node.fields) {
             if ((field.access & Opcodes.ACC_PUBLIC) == 0 || (field.access & Opcodes.ACC_SYNTHETIC) != 0) continue;
@@ -691,7 +894,16 @@ final class GeneratorApiRelocation {
         }
         String superName = node.superName == null ? null : node.superName.replace('/', '.');
         var interfaces = node.interfaces.stream().map(name -> name.replace('/', '.')).toList();
-        return new ClassModel(node.name.replace('/', '.'), superName, interfaces, List.copyOf(parameters), List.copyOf(fields), List.copyOf(methods));
+        return new ClassModel(node.name.replace('/', '.'), superName, interfaces, List.copyOf(parameters), supers, List.copyOf(fields), List.copyOf(methods));
+    }
+
+    private static List<JavaType> superTypes(String signature, List<String> parameters) {
+        if (signature == null) return List.of();
+        var cursor = new int[]{0};
+        if (signature.startsWith("<")) skipTypeParameters(signature, cursor, parameters);
+        var types = new ArrayList<JavaType>();
+        while (cursor[0] < signature.length()) types.add(parseType(signature, cursor));
+        return List.copyOf(types);
     }
 
     private static ClassModel lookup(Map<String, ClassModel> classes, String name) {
@@ -827,8 +1039,8 @@ final class GeneratorApiRelocation {
     private record Member(String name, boolean isStatic, boolean bridge, boolean field, List<JavaType> parameters, JavaType type) {
     }
 
-    private record ClassModel(String name, String superName, List<String> interfaces, List<String> typeParameters, List<Member> fields,
-                              List<Member> methods) {
+    private record ClassModel(String name, String superName, List<String> interfaces, List<String> typeParameters,
+                              List<JavaType> superTypes, List<Member> fields, List<Member> methods) {
         List<Member> members() {
             var combined = new ArrayList<Member>(fields);
             combined.addAll(methods);
