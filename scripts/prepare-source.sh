@@ -46,6 +46,9 @@ git -C "$data_generator_directory" checkout --detach "$data_generator_commit"
   --generator "$data_generator_directory" --source "$target_directory" --templates "$nightstorm_root/templates"
 mkdir -p "$target_directory/.nightstorm"
 export NIGHTSTORM_VANILLA_JAR_OUTPUT="$target_directory/.nightstorm/vanilla-jar.txt"
+export NIGHTSTORM_BIN="$nightstorm_root/build/install/nightstorm/bin/nightstorm"
+export NIGHTSTORM_BASELINE_JAR="$target_directory/.nightstorm/baseline-minecraft-server.jar"
+export NIGHTSTORM_API_RELOCATION="$data_generator_directory/.nightstorm/api-relocation.json"
 
 # MinestomDataGenerator is Minestom's existing bridge from vanilla data to its code generators.
 if [[ "$base_ref" == "$minestom_tag" ]]; then

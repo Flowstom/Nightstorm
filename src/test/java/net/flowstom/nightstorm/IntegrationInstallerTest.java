@@ -59,6 +59,17 @@ class IntegrationInstallerTest {
                 }
                 """);
         var untouched = write(source.resolve("Other.java"), "class Other {   int unchanged; }");
+        var keys = write(source.resolve("Keys.java"), """
+                package sample;
+                class Keys {
+                    static @Nullable String fromName(String key) {
+                        return fromName(Key.key(key));
+                    }
+                    static String required(String key) {
+                        return required(Key.key(key));
+                    }
+                }
+                """);
         IntegrationInstaller.install(generator, source, Path.of("templates"));
         var onceMain = Files.readString(main);
         var onceRegistry = Files.readString(registry);
@@ -69,9 +80,13 @@ class IntegrationInstallerTest {
         assertTrue(Files.readString(scalarSource).contains("ScalarDataAccess.read(state, \"enabled\", boolean.class)"), Files.readString(scalarSource));
         assertTrue(Files.readString(scalarSource).contains("ScalarDataAccess.domain(Unrelated.class"));
         assertEquals("class Other {   int unchanged; }", Files.readString(untouched));
+        String keysOnce = Files.readString(keys);
+        assertTrue(keysOnce.contains("key == null") && keysOnce.contains("return null"), keysOnce);
+        assertTrue(keysOnce.contains("return required(Key.key(key))"), keysOnce);
         IntegrationInstaller.install(generator, source, Path.of("templates"));
         assertEquals(onceMain, Files.readString(main));
         assertEquals(onceRegistry, Files.readString(registry));
+        assertEquals(keysOnce, Files.readString(keys));
     }
 
     private static Path write(Path path, String source) throws Exception {

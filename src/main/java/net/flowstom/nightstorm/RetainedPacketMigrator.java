@@ -224,6 +224,7 @@ final class RetainedPacketMigrator {
                 WireMigration plan = migration.wire();
                 if (previous == null) {
                     plan = withSourceCodecs(plan, requireBaselineSerializer(sources, packetType, current, plan));
+                    plan = substituteEnumPlaceholders(sources, packetType, plan);
                 }
                 else if (!wireSerializer(sources, packetType, previous).equals(current)) {
                     throw new IllegalStateException("Saved wire adapter does not match the source serializer; review source edits before regenerating");
@@ -244,6 +245,34 @@ final class RetainedPacketMigrator {
         if (previous != null && !previous.semantic().equals(edit.semantic())) {
             throw new IllegalStateException("Conflicting whole-payload migrations for " + packetType.qualifiedName());
         }
+    }
+
+    /** Saved adapters must name the source enum; {@code $TYPE$} is only a planning placeholder. */
+    private static WireMigration substituteEnumPlaceholders(SourceIndex sources, ResolvedType owner, WireMigration plan) {
+        final List<WireMigration.Binding> bindings = new ArrayList<>();
+        for (WireMigration.Binding binding : plan.bindings()) {
+            if (!binding.networkType().contains("$TYPE$")) {
+                bindings.add(binding);
+                continue;
+            }
+            if (binding.source() < 0) throw new IllegalStateException("Enum codec rewrite is not bound to a source component");
+            final ResolvedType enumType = sources.recordComponentType(owner, binding.source(), true);
+            if (!(enumType.declaration() instanceof EnumDeclaration declaration)) {
+                throw new IllegalStateException("Migrated serializer leaf " + enumType.qualifiedName() + " is not a source enum");
+            }
+            final Set<String> referenced = new LinkedHashSet<>();
+            final var matcher = java.util.regex.Pattern.compile("\\$TYPE\\$\\.([A-Za-z_]\\w*)").matcher(binding.networkType());
+            while (matcher.find()) referenced.add(matcher.group(1));
+            final Set<String> constants = new LinkedHashSet<>();
+            declaration.getEntries().forEach(entry -> constants.add(entry.getNameAsString()));
+            if (!constants.equals(referenced)) {
+                throw new IllegalStateException("Target and source enum constants do not match for "
+                        + enumType.qualifiedName() + ": " + referenced + " versus " + constants);
+            }
+            bindings.add(new WireMigration.Binding(binding.component(), binding.source(), binding.javaType(),
+                    binding.networkType().replace("$TYPE$", declaration.getNameAsString()), binding.constant()));
+        }
+        return new WireMigration(plan.baseline(), plan.target(), bindings);
     }
 
     /** Changes source APIs only for deletions and supported collection additions with neutral legacy values. */

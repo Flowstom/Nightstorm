@@ -40,13 +40,13 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
     static Optional<WireSchema> scan(ClassNode node, java.util.function.Function<String, ClassNode> classes) {
         try {
             var components = components(node);
-            var composite = composite(node, components, classes);
-            if (composite.isPresent()) return composite;
-            Optional<WireSchema> straight;
-            try { straight = manual(node, components); }
-            catch (UnsupportedOperationException exception) { straight = Optional.empty(); }
-            if (straight.isPresent()) return straight;
-            return boundedManual(node, components, classes);
+            Optional<WireSchema> schema = composite(node, components, classes);
+            if (schema.isEmpty()) {
+                try { schema = manual(node, components, classes); }
+                catch (UnsupportedOperationException exception) { schema = Optional.empty(); }
+            }
+            if (schema.isEmpty()) schema = boundedManual(node, components, classes);
+            return schema.map(value -> canonicalize(value, classes));
         } catch (UnsupportedOperationException | IllegalArgumentException exception) {
             return Optional.empty();
         }
@@ -97,11 +97,30 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                                                  java.util.function.Function<String, ClassNode> classes) {
         for (MethodNode method : node.methods) {
             if (!method.name.equals("<clinit>")) continue;
+            var body = new ArrayList<AbstractInsnNode>();
+            for (AbstractInsnNode instruction : method.instructions) if (instruction.getOpcode() >= 0) body.add(instruction);
+            int start = 0;
+            for (int end = 0; end < body.size(); end++) {
+                if (!(body.get(end) instanceof FieldInsnNode stored) || stored.getOpcode() != Opcodes.PUTSTATIC) continue;
+                if (stored.owner.equals(node.name) && stored.name.equals("STREAM_CODEC")
+                        && body.subList(start, end + 1).stream().noneMatch(JumpInsnNode.class::isInstance)) {
+                    var parsed = compositeWindow(node, components, classes, body.subList(start, end + 1));
+                    if (parsed.isPresent()) return parsed;
+                }
+                start = end + 1;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Parses one static initializer, from the previous store through this {@code STREAM_CODEC} store. */
+    private static Optional<WireSchema> compositeWindow(ClassNode node, List<Component> components,
+                                                        java.util.function.Function<String, ClassNode> classes,
+                                                        List<AbstractInsnNode> body) {
             var fields = new ArrayList<Field>();
             var operands = new ArrayList<Object>();
             boolean composed = false;
-            for (AbstractInsnNode instruction : method.instructions) {
-                if (instruction.getOpcode() < 0) continue;
+            for (AbstractInsnNode instruction : body) {
                 if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC) {
                     if (composed) return Optional.empty();
                     operands.add(codecDescriptor(field.desc, classes) ? new Codec(field.owner, field.name)
@@ -178,7 +197,6 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                     return Optional.empty();
                 }
             }
-        }
         return Optional.empty();
     }
 
@@ -206,21 +224,28 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
         return Optional.of(new WireSchema(node.name, components, reads));
     }
 
-    private static Optional<WireSchema> manual(ClassNode node, List<Component> components) {
+    private static WireSchema canonicalize(WireSchema schema, java.util.function.Function<String, ClassNode> classes) {
+        return new WireSchema(schema.owner(), schema.components(), schema.fields().stream()
+                .map(field -> new Field(field.component(), WireCanonical.canonicalize(field.codec(), classes))).toList());
+    }
+
+    private static Optional<WireSchema> manual(ClassNode node, List<Component> components,
+                                               java.util.function.Function<String, ClassNode> classes) {
         List<Field> reads = null;
         List<Field> writes = null;
         for (MethodNode method : node.methods) {
             if (method.name.equals("<init>") && method.desc.matches("\\(Lnet/minecraft/network/\\w*FriendlyByteBuf;\\)V")) {
-                reads = manualFields(node, method, components, true);
+                reads = manualFields(node, method, components, true, classes);
             } else if (method.name.equals("write") && method.desc.matches("\\(Lnet/minecraft/network/\\w*FriendlyByteBuf;\\)V")) {
-                writes = manualFields(node, method, components, false);
+                writes = manualFields(node, method, components, false, classes);
             }
         }
         if (reads == null || !reads.equals(writes)) return Optional.empty();
         return Optional.of(new WireSchema(node.name, components, reads));
     }
 
-    private static List<Field> manualFields(ClassNode owner, MethodNode method, List<Component> components, boolean reading) {
+    private static List<Field> manualFields(ClassNode owner, MethodNode method, List<Component> components, boolean reading,
+                                            java.util.function.Function<String, ClassNode> classes) {
         var result = new ArrayList<Field>();
         var stack = new ArrayList<Object>();
         final Object self = new Object(), buffer = new Object();
@@ -229,8 +254,13 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
             if (opcode < 0 || opcode == Opcodes.RETURN) continue;
             if (instruction instanceof VarInsnNode variable && opcode == Opcodes.ALOAD) {
                 stack.add(variable.var == 0 ? self : variable.var == 1 ? buffer : fail());
+            } else if (instruction instanceof InvokeDynamicInsnNode dynamic) {
+                var codec = WireCanonical.referencedCodec(dynamic, reading, classes);
+                if (codec == null) return fail();
+                stack.add(codec);
             } else if (instruction instanceof FieldInsnNode field) {
                 if (opcode == Opcodes.GETSTATIC && field.desc.equals(STREAM_CODEC)) stack.add(new Codec(field.owner, field.name));
+                else if (opcode == Opcodes.GETSTATIC) stack.add(WireCanonical.ARGUMENT);
                 else if (opcode == Opcodes.GETFIELD && pop(stack) == self && field.owner.equals(owner.name)) stack.add(componentIndex(components, field.name));
                 else if (opcode == Opcodes.PUTFIELD && reading) {
                     Object codec = pop(stack);
@@ -258,6 +288,21 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                     continue;
                 }
                 if (call.owner.endsWith("FriendlyByteBuf")) {
+                    if ((call.name.equals("readOptional") || call.name.equals("writeOptional"))
+                            && WireCanonical.booleanOptional(call, classes)) {
+                        if (reading && call.name.equals("readOptional")) {
+                            Object decoder = pop(stack);
+                            if (pop(stack) != buffer || !(decoder instanceof Codec codec)) return fail();
+                            stack.add(codec.apply("optional"));
+                        } else if (!reading && call.name.equals("writeOptional")) {
+                            Object decoder = pop(stack);
+                            Object component = pop(stack);
+                            if (pop(stack) != buffer || !(component instanceof Integer index) || !(decoder instanceof Codec codec)) return fail();
+                            result.add(new Field(index, codec.apply("optional")));
+                        } else return fail();
+                        continue;
+                    }
+                    var proved = WireCanonical.directCodec(call, reading, classes);
                     String name = call.name.startsWith("read") ? call.name.substring(4) : call.name.startsWith("write") ? call.name.substring(5) : "";
                     String codec = switch (name) {
                         case "Boolean" -> "BOOL"; case "Byte" -> "BYTE"; case "Short" -> "SHORT";
@@ -266,13 +311,35 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                         case "Utf" -> "STRING_UTF8";
                         default -> null;
                     };
-                    if (codec == null || opcode == Opcodes.INVOKESTATIC) return fail();
-                    if (reading && call.name.startsWith("read") && Type.getArgumentTypes(call.desc).length == 0 && pop(stack) == buffer) {
-                        stack.add(new Codec(BYTE_CODECS, codec));
-                    } else if (!reading && call.name.startsWith("write") && Type.getArgumentTypes(call.desc).length == 1) {
-                        Object component = pop(stack);
-                        if (pop(stack) != buffer || !(component instanceof Integer index)) return fail();
-                        result.add(new Field(index, new Codec(BYTE_CODECS, codec)));
+                    if (proved != null) codec = null;
+                    if (codec == null && proved == null || opcode == Opcodes.INVOKESTATIC) return fail();
+                    if (reading && (proved != null || call.name.startsWith("read"))) {
+                        var arguments = Type.getArgumentTypes(call.desc);
+                        for (int i = arguments.length - 1; i >= 0; i--) {
+                            Object argument = pop(stack);
+                            if (proved != null && argument != WireCanonical.ARGUMENT) return fail();
+                            if (proved == null && arguments.length != 0) return fail();
+                        }
+                        if (pop(stack) != buffer) return fail();
+                        stack.add(proved != null ? proved : new Codec(BYTE_CODECS, codec));
+                    } else if (!reading && (proved != null || call.name.startsWith("write")) && Type.getArgumentTypes(call.desc).length >= 1) {
+                        var arguments = new Object[Type.getArgumentTypes(call.desc).length];
+                        for (int i = arguments.length - 1; i >= 0; i--) arguments[i] = pop(stack);
+                        if (pop(stack) != buffer) return fail();
+                        if (proved == null && arguments.length != 1) return fail();
+                        Object component = arguments[0];
+                        Codec written = proved;
+                        int index;
+                        if (component instanceof WireCanonical.EnumBits bits) {
+                            written = WireCanonical.enumWidth(bits, codec, classes);
+                            if (written == null || proved != null) return fail();
+                            index = bits.component();
+                        } else if (component instanceof Integer scalar) {
+                            if (written == null) written = new Codec(BYTE_CODECS, codec);
+                            else if (arguments.length != 1) return fail();
+                            index = scalar;
+                        } else return fail();
+                        result.add(new Field(index, written));
                         if (Type.getReturnType(call.desc) != Type.VOID_TYPE) stack.add(buffer);
                     } else return fail();
                 } else if (call.owner.equals("net/minecraft/network/codec/StreamCodec")) {
@@ -285,7 +352,7 @@ record WireSchema(String owner, List<Component> components, List<Field> fields) 
                         if (input != buffer || !(component instanceof Integer index) || !(codec instanceof Codec value)) return fail();
                         result.add(new Field(index, value));
                     } else return fail();
-                } else return fail();
+                } else if (!WireCanonical.applyEnum(call, reading, stack, classes)) return fail();
             } else if (opcode == Opcodes.POP) pop(stack);
             else if (opcode != Opcodes.CHECKCAST) return fail();
         }

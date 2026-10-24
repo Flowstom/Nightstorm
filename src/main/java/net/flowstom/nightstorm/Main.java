@@ -22,6 +22,12 @@ public final class Main {
             case "update-source-width" -> updateSourceWidth(options);
             case "install-integrations" -> IntegrationInstaller.install(options.requiredPath("generator"),
                     options.requiredPath("source"), options.requiredPath("templates"));
+            case "relocate-generator-apis" -> {
+                var relocated = GeneratorApiRelocation.relocate(options.requiredPath("generator"),
+                        options.requiredPath("baseline-jar"), options.requiredPath("jar"), options.requiredPath("output"));
+                System.out.printf("Relocated %d generator type%s%n", relocated.size(),
+                        relocated.isEmpty() ? "" : ": " + String.join(", ", relocated));
+            }
             default -> {
                 usage();
                 System.exit(2);
@@ -81,5 +87,6 @@ public final class Main {
         System.err.println("  nightstorm update-packets --baseline-jar <server.jar> --jar <server.jar> --source <minestom> --output <packet-schema.json>");
         System.err.println("  nightstorm update-source-width --source <root> --archive <data.jar> --resource <file.json> --value-path <path> --file <source.java> --constant <name>");
         System.err.println("  nightstorm install-integrations --generator <data-generator> --source <minestom> --templates <templates>");
+        System.err.println("  nightstorm relocate-generator-apis --generator <data-generator> --baseline-jar <server.jar> --jar <server.jar> --output <api-relocation.json>");
     }
 }
